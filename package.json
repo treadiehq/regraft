@@ -1,0 +1,37 @@
+{
+  "name": "regraft",
+  "version": "0.1.0",
+  "description": "Vendor files from upstream git repos, track them with content hashes and plain-English intent notes, and pull upstream updates via three-way merge, with agent-friendly conflict briefs.",
+  "type": "module",
+  "license": "FSL-1.1-MIT",
+  "bin": {
+    "regraft": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "lint": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}
