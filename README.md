@@ -79,3 +79,7 @@ pnpm link --global   # optional: puts `regraft` on your PATH
 See [`docs/detailed.md`](docs/detailed.md) for the full reference: the
 classification model, every command and flag, source syntax, JSON output,
 exit codes, and the manifest format.
+
+## License
+
+[FSL-1.1-MIT](LICENSE)
