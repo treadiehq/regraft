@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Vendor files from upstream git repos, track them with content hashes and plain-English intent notes, and pull upstream updates via three-way merge, with agent-friendly conflict briefs.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/treadiehq/regraft.git"
+  },
+  "homepage": "https://github.com/treadiehq/regraft#readme",
   "license": "FSL-1.1-MIT",
   "bin": {
     "regraft": "dist/cli.js"
@@ -17,7 +22,8 @@
     "build": "tsup",
     "lint": "tsc --noEmit",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "build:binary": "bash scripts/build-release.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

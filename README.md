@@ -41,6 +41,20 @@ That's the whole loop: add → edit → note → pull → resolve.
 
 ## Install
 
+**macOS / Linux** (needs `curl`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/treadiehq/regraft/main/scripts/install.sh | bash
+```
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/treadiehq/regraft/main/scripts/install.ps1 | iex
+```
+
+**From source** (needs Node ≥ 20 and pnpm):
+
 ```bash
 pnpm install
 pnpm build           # produces dist/cli.js
@@ -69,7 +83,7 @@ pnpm link --global   # optional: puts `regraft` on your PATH
   judgment, it stops and writes a brief instead of guessing. Whoever picks up
   the brief, you or a coding agent — makes the call. If an agent works in
   your repo, point it at [`skills/regraft/SKILL.md`](skills/regraft/SKILL.md).
-- Every command takes `--json`; `add` and `pull` take `--dry-run`.
+- Every command takes `--json` (except `update`); `add` and `pull` take `--dry-run`.
 - `regraft status --offline` skips the upstream checks (no network), and
   `regraft completion bash|zsh|fish` gives you tab-completion.
 - Commit `regraft.json` and `PATCH.md`. The `.regraft/` folder ignores itself.

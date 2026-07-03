@@ -16,6 +16,7 @@ const COMMANDS: readonly CommandSpec[] = [
   { name: "pull", description: "Pull upstream updates via three-way merge", options: ["--dry-run", "--force", "--json"] },
   { name: "resolve", description: "Mark conflicted files as reconciled", options: ["--note", "--json"] },
   { name: "remove", description: "Stop tracking a source", options: ["--hard", "--json"] },
+  { name: "update", description: "Update regraft itself to the latest release", options: [] },
   { name: "completion", description: "Print a shell completion script", options: [] },
 ];
 

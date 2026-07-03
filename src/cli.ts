@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import { addCliCommand } from "./commands/add";
 import { completionCommand } from "./commands/completion";
@@ -8,6 +9,7 @@ import { pullCommand } from "./commands/pull";
 import { removeCommand } from "./commands/remove";
 import { resolveCommand } from "./commands/resolve";
 import { statusCommand } from "./commands/status";
+import { updateCommand } from "./commands/update";
 import {
   printAddCli,
   printCompletion,
@@ -19,6 +21,26 @@ import {
   printResolve,
   printStatus,
 } from "./ui/output";
+
+/**
+ * Resolve the CLI version. Standalone release binaries get `__REGRAFT_VERSION__`
+ * baked in at build time (there is no package.json on disk next to a compiled
+ * binary); source and dev builds fall back to reading it from package.json.
+ */
+declare const __REGRAFT_VERSION__: string | undefined;
+function resolveVersion(): string {
+  if (typeof __REGRAFT_VERSION__ === "string" && __REGRAFT_VERSION__.length > 0) {
+    return __REGRAFT_VERSION__;
+  }
+  try {
+    const { version } = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    return version;
+  } catch {
+    return "0.0.0";
+  }
+}
 
 function execute<T extends { exitCode: number }>(json: boolean, printer: (result: T) => void, fn: () => T): void {
   try {
@@ -42,7 +64,7 @@ program
       "updates via three-way merge — with plain-English intent notes (PATCH.md) so a\n" +
       "coding agent can reconcile conflicts. Deterministic; never calls a model.",
   )
-  .version("0.1.0")
+  .version(resolveVersion())
   .showHelpAfterError();
 
 program
@@ -201,6 +223,25 @@ Examples:
   )
   .action((source: string, opts: { hard?: boolean; json?: boolean }) => {
     execute(Boolean(opts.json), printRemove, () => removeCommand(source, { cwd: process.cwd(), hard: opts.hard }));
+  });
+
+program
+  .command("update")
+  .description("Update regraft itself to the latest release")
+  .argument("[version]", "release tag to update to, e.g. v0.2.0 (default: latest)")
+  .addHelpText(
+    "after",
+    `
+A standalone binary install re-runs the public installer; a git checkout is
+pulled and rebuilt in place; a package-manager install is left to npm/pnpm.
+
+Examples:
+  $ regraft update
+  $ regraft update v0.2.0
+`,
+  )
+  .action((version?: string) => {
+    process.exitCode = updateCommand(version);
   });
 
 program

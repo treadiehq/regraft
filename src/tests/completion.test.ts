@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { completionCommand } from "../commands/completion";
 import { COMPLETION_SHELLS, completionScript } from "../core/completion";
 
-const ALL_COMMANDS = ["add", "diff", "note", "status", "pull", "resolve", "remove", "completion"];
+const ALL_COMMANDS = ["add", "diff", "note", "status", "pull", "resolve", "remove", "update", "completion"];
 
 describe("regraft completion", () => {
   it.each(COMPLETION_SHELLS)("generates a %s script covering every command", (shell) => {

@@ -169,6 +169,14 @@ local dest, so `regraft remove lib/components` works as naturally as
 or with the matching list when ambiguous. `--hard` also deletes the files.
 Intent entries are kept as history and marked *orphaned* in PATCH.md.
 
+### `regraft update [version]`
+
+Updates regraft itself. A standalone binary install re-runs the public
+installer (downloading the given release tag, default latest); a git checkout
+is fetched and rebuilt in place (refusing if the checkout is dirty); a
+package-manager install is left to npm/pnpm with a hint. This command streams
+installer output and does not take `--json`.
+
 ### `regraft completion <shell>`
 
 Prints a completion script for `bash`, `zsh`, or `fish` covering all commands
@@ -189,7 +197,7 @@ regraft completion fish > ~/.config/fish/completions/regraft.fish
 
 ## JSON output shapes
 
-Every command accepts `--json` and prints exactly one JSON object to stdout.
+Every command except `update` accepts `--json` and prints exactly one JSON object to stdout.
 Errors in `--json` mode print `{ "error": "<message>", "exitCode": 1 }`.
 All paths are project-root-relative. Agents can pattern-match on these shapes;
 they are stable.
