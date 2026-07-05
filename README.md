@@ -44,13 +44,13 @@ That's the whole loop: add → edit → note → pull → resolve.
 **macOS / Linux** (needs `curl`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/treadiehq/regraft/main/scripts/install.sh | bash
+curl -fsSL https://useregraft.com/install.sh | bash
 ```
 
 **Windows** (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/treadiehq/regraft/main/scripts/install.ps1 | iex
+irm https://useregraft.com/install.ps1 | iex
 ```
 
 **From source** (needs Node ≥ 20 and pnpm):
