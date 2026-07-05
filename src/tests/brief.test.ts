@@ -34,22 +34,22 @@ describe("renderBrief", () => {
     expect(md).toContain("rework theming");
   });
 
-  it("includes the FULL text of intents intersecting the conflicts, and only those", () => {
+  it("includes the full text of notes intersecting the conflicts, and only those", () => {
     const md = renderBrief([section], intents, new Date());
     expect(md).toContain("aa11bb22");
     expect(md).toContain("Brand palette replaces default tokens.");
     expect(md).not.toContain("Unrelated tweak elsewhere.");
   });
 
-  it("instructs the agent to rebuild intents, remove markers, and run resolve", () => {
+  it("instructs the fixer to rebuild notes, remove markers, and run resolve", () => {
     const md = renderBrief([section], intents, new Date());
-    expect(md).toContain("Instructions for the resolving agent");
+    expect(md).toContain("Instructions for the person or agent fixing this");
     expect(md.toLowerCase()).toContain("rebuild");
     expect(md).toContain("Remove ALL conflict markers");
     expect(md).toContain("regraft resolve");
   });
 
-  it("flags unrecorded modifications when no intent covers the conflicts", () => {
+  it("flags unrecorded changes when no note covers the conflicts", () => {
     const md = renderBrief([section], [], new Date());
     expect(md).toContain("UNRECORDED");
   });

@@ -60,19 +60,19 @@ const program = new Command();
 program
   .name("regraft")
   .description(
-    "Vendor files from upstream git repos, customize them, and keep pulling upstream\n" +
-      "updates via three-way merge — with plain-English intent notes (PATCH.md) so a\n" +
-      "coding agent can reconcile conflicts. Deterministic; never calls a model.",
+    "Copy code from any git repo, change it for your project, and keep pulling\n" +
+      "upstream updates later. regraft tracks what changed and writes conflict\n" +
+      "briefs when updates need judgment.",
   )
   .version(resolveVersion())
   .showHelpAfterError();
 
 program
   .command("add")
-  .description("Vendor files or directories from upstream git repos and start tracking them")
-  .argument("<args...>", "one or more upstream sources, optionally followed by a dest (single source only)")
+  .description("Copy files or directories from git repos and start tracking them")
+  .argument("<args...>", "one or more sources, optionally followed by a destination (single source only)")
   .option("--force", "overwrite existing local files that differ from upstream")
-  .option("--adopt", "track existing differing files as local modifications instead of skipping them")
+  .option("--adopt", "keep existing local files and track them as local changes")
   .option("--dry-run", "report what would happen without writing anything")
   .option("--json", "print machine-readable JSON")
   .addHelpText(
@@ -83,9 +83,9 @@ The last argument is treated as the local destination when it is a plain path
 is only supported with a single source; with several sources each one lands in
 its default destination.
 
---adopt is for code you vendored by hand before using regraft: existing files
+--adopt is for code you copied by hand before using regraft: existing files
 that differ from upstream are tracked as-is (nothing is overwritten) and show
-up as local modifications — record why with \`regraft note\`.
+up as local changes. Record why with \`regraft note\`.
 
 Examples:
   $ regraft add owner/repo/tree/main/src/components lib/components
@@ -104,7 +104,7 @@ Examples:
 
 program
   .command("diff")
-  .description("Show local edits vs the vendored baseline, or upstream movement with --upstream")
+  .description("Show local changes, or upstream changes with --upstream")
   .argument("[files...]", "project-relative tracked files to scope to (default: all)")
   .option("--upstream", "diff the pinned upstream content against the current remote head instead")
   .option("--json", "print machine-readable JSON")
@@ -127,8 +127,8 @@ Examples:
 
 program
   .command("note")
-  .description("Record the intent behind local customizations of tracked files (updates PATCH.md)")
-  .argument("<description>", "plain-English: what was changed and why")
+  .description("Record why you changed tracked files (updates PATCH.md)")
+  .argument("<description>", "what changed and why")
   .option("--files <paths...>", "project-relative files to snapshot (default: all modified tracked files not yet covered)")
   .option("--json", "print machine-readable JSON")
   .addHelpText(
@@ -145,8 +145,8 @@ Examples:
 
 program
   .command("status")
-  .description("Classify every tracked file and check upstreams for new commits (CI gate; no writes)")
-  .option("--offline", "skip upstream checks (no network); classify local state only")
+  .description("Check tracked files and upstream updates")
+  .option("--offline", "skip upstream checks (no network); check local files only")
   .option("--json", "print machine-readable JSON")
   .addHelpText(
     "after",
@@ -166,15 +166,15 @@ Examples:
 
 program
   .command("pull")
-  .description("Pull upstream updates: fast-forward clean files, three-way merge modified ones")
+  .description("Pull upstream updates into tracked files")
   .option("--dry-run", "report what would happen without writing anything")
-  .option("--force", "take upstream wholesale for conflicting files instead of writing markers")
+  .option("--force", "use upstream for conflicting files instead of writing markers")
   .option("--json", "print machine-readable JSON")
   .addHelpText(
     "after",
     `
-On conflict, diff3 markers are written in place and a reconciliation brief is
-generated under .regraft/briefs/ with the relevant intents from PATCH.md.
+On conflict, regraft writes normal markers in place and creates a brief under
+.regraft/briefs/ with the relevant notes from PATCH.md.
 
 Examples:
   $ regraft pull
@@ -188,9 +188,9 @@ Examples:
 
 program
   .command("resolve")
-  .description("Mark conflicted files as reconciled after fixing them (verifies markers are gone)")
+  .description("Finish conflicts after fixing the files")
   .argument("[files...]", "project-relative files to resolve (default: all unresolved)")
-  .option("--note <description>", "record the resolution intent in the same step")
+  .option("--note <description>", "record why the fix was made in the same step")
   .option("--json", "print machine-readable JSON")
   .addHelpText(
     "after",
@@ -206,8 +206,8 @@ Examples:
 
 program
   .command("remove")
-  .description("Stop tracking a source (substring match on its URL or local dest)")
-  .argument("<source>", "substring of the tracked source URL or its local dest path")
+  .description("Stop tracking a source")
+  .argument("<source>", "part of the tracked source URL or local destination path")
   .option("--hard", "also delete the tracked files from disk")
   .option("--json", "print machine-readable JSON")
   .addHelpText(

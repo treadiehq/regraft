@@ -60,7 +60,7 @@ export interface PullResult {
   dryRun: boolean;
   /** True when any file received conflict markers this pull. */
   conflicts: boolean;
-  /** Project-relative path of the reconciliation brief, or null. */
+  /** Project-relative path of the conflict brief, or null. */
   brief: string | null;
   /**
    * Tracked files that were modified locally without a recorded intent at the
@@ -235,7 +235,7 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
         }
         result.deleted.push(proj);
       } else {
-        result.warnings.push({ path: proj, message: "upstream deleted this file but it has local modifications; kept the local copy" });
+        result.warnings.push({ path: proj, message: "upstream deleted this file, but it has local changes; kept your copy" });
       }
       continue;
     }
@@ -281,7 +281,7 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
         }
         result.forced.push(proj);
       } else {
-        result.warnings.push({ path: proj, message: "binary file changed both locally and upstream; kept the local version (re-run with --force to take upstream)" });
+        result.warnings.push({ path: proj, message: "binary file changed both locally and upstream; kept your copy (re-run with --force to use upstream)" });
       }
       continue;
     }

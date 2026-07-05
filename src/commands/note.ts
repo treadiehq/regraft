@@ -68,8 +68,8 @@ export function noteCommand(description: string, opts: NoteOptions): NoteResult 
     targets = findUnrecordedModifications(root, manifest);
     if (targets.length === 0) {
       throw new Error(
-        "Nothing to record: no modified tracked files lack intent coverage.\n" +
-          "Modify a tracked file first, or pass --files to snapshot specific files explicitly.",
+        "Nothing to record: no changed tracked files need a note.\n" +
+          "Change a tracked file first, or pass --files to record specific files.",
       );
     }
   }

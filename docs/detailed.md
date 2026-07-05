@@ -1,16 +1,15 @@
-# regraft — detailed reference
+# regraft detailed reference
 
-The [README](../README.md) covers the idea and the loop. This document goes
-deep: the classification model, every command, source syntax, JSON shapes,
-file formats, exit codes, and development notes.
+The [README](../README.md) covers the idea and the basic loop. This page is the
+full reference: how regraft decides what changed, every command and flag, source
+syntax, JSON output, file formats, exit codes, and development notes.
 
-## The two-layer model
+## How regraft works
 
-**1. Mechanical layer** — a committed manifest (`regraft.json`) records, per source:
-the upstream URL, the pinned commit SHA you last reconciled against, and a SHA-256
-hash of every file as regraft last wrote it. Comparing three states — the *stored*
-hash, the *disk* hash, and the *upstream* content — classifies every file
-deterministically:
+**1. File tracking** — `regraft.json` records each source, the upstream commit
+you last pulled from, and a SHA-256 hash for every tracked file. To decide what
+to do next, regraft compares three things: the stored hash, the file on disk, and
+the latest upstream content.
 
 | stored vs disk | upstream at pinned vs new SHA | pull behavior |
 | --- | --- | --- |
@@ -19,34 +18,35 @@ deterministically:
 | differ (local edits) | changed | three-way merge (`git merge-file --diff3`) |
 | — | file deleted upstream, locally modified | keep local copy, warn, add to brief |
 
-Non-overlapping changes merge silently. Only true conflicts produce inline diff3
-markers (`<<<<<<< local` / `||||||| base` / `>>>>>>> upstream`) at the conflict
-site. Binary files are tracked by hash, fast-forwarded when unmodified, and never
-merged — conflicting binaries are skipped with a warning and reported in the brief.
+Changes that do not overlap merge quietly. Real conflicts get normal diff3
+markers (`<<<<<<< local` / `||||||| base` / `>>>>>>> upstream`) where the
+conflict happened. Binary files are tracked by hash and updated when untouched,
+but never merged. If a binary changed on both sides, regraft keeps your copy,
+prints a warning, and adds it to the brief.
 
-**2. Intent layer** — every deliberate local customization is recorded as a
-plain-English entry (`regraft note "..."`): what was changed and why. Entries live
-in the manifest and are rendered into a generated, committed `PATCH.md`. When a
-merge conflicts, the resolver gets the reasoning behind each local change, not
-just the diff, so it can rebuild the change on top of the new upstream code.
+**2. Notes** — every deliberate local change gets a plain-language note
+(`regraft note "..."`) that says what changed and why. Notes live in
+`regraft.json` and are rendered into the committed `PATCH.md`. When a merge
+conflicts, the person or agent fixing it gets the reason for your change, not
+just the diff.
 
-Intent integrity is **enforced**: recording an entry snapshots the disk hash of each
-covered file, and `regraft status` classifies every locally modified tracked file
-as either `modified+intent` (disk hash matches a snapshot) or `modified-unrecorded`
-(fails the exit code). That is what keeps PATCH.md trustworthy over time.
+regraft also checks that notes stay honest. When you record a note, regraft saves
+the current hash of each covered file. Later, `regraft status` marks each local
+change as either `modified+intent` (covered by a note) or
+`modified-unrecorded` (not covered, exits 1).
 
 ## Files regraft manages
 
 | File | Committed | Purpose |
 | --- | --- | --- |
-| `regraft.json` | yes | The manifest — single source of truth, validated with zod on read |
-| `PATCH.md` | yes | Generated intent journal (human/agent-readable view of the manifest) |
-| `.regraft/` | no | Working dir: `cache/` (git clones), `briefs/` (reconciliation briefs). regraft writes `.regraft/.gitignore` containing `*` so you never have to think about it |
+| `regraft.json` | yes | Source of truth, validated with zod on read |
+| `PATCH.md` | yes | Generated note journal for people and agents |
+| `.regraft/` | no | Working directory for `cache/` git clones and `briefs/` conflict briefs. regraft ignores it for you |
 
-Fetching is **git-native**: upstreams are fetched with your own `git` into
-`.regraft/cache/`, so it works with private repos through your existing git auth
-and with any git remote (GitHub, GitLab, self-hosted, even `file://`). `git`
-must be on PATH; regraft fails fast with a clear error if it is missing.
+regraft fetches with your own `git` into `.regraft/cache/`. That means private
+repos work through your existing git auth, and any git remote works: GitHub,
+GitLab, self-hosted, or `file://`. `git` must be on PATH; if it is missing,
+regraft stops with a clear error.
 
 ## Accepted source forms
 
@@ -73,93 +73,89 @@ different from applying a PR's diff once; that job belongs to git.)
 
 ## Command reference
 
-All commands are non-interactive (missing args produce an immediate error plus
-usage/examples), idempotent (running twice is a no-op or an explicit "already
-done"), have `--help` with an Examples section, and support `--json`.
+All commands are safe to script. Missing args fail right away with usage and
+examples. Running the same command twice is either a no-op or says "already
+done". Every command has `--help` with examples, and every command except
+`update` supports `--json`.
 
 ### `regraft add <source...> [dest]`
 
-Vendor and start tracking. Per file: doesn't exist → write; exists untracked with
-different content → skip (needs `--force` or `--adopt`); exists and identical →
-track silently. Records the source with the pinned SHA (resolved HEAD of the ref)
-and per-file hashes. Supports `--dry-run`. Default dest: basename of the upstream
-path, or the repo name for repo roots.
+Copy code into your project and start tracking it. For each file:
+doesn't exist → write it; exists with different content → skip it unless you pass
+`--force` or `--adopt`; exists and identical → track it without writing. regraft
+records the source, the resolved upstream commit, and each file hash. Supports
+`--dry-run`. The default destination is the upstream path basename, or the repo
+name for repo roots.
 
-Several sources can be added in one call, each landing in its default dest. The
-last argument is treated as the dest only when it is a plain path (no URL scheme,
-no `#ref`, no `/tree/`, `/blob/`, or `/pull/` segment), and a dest is only
-allowed with a single source.
+You can add several sources in one call. Each one lands in its default
+destination. The last argument is treated as the destination only when it is a
+plain path (no URL scheme, no `#ref`, no `/tree/`, `/blob/`, or `/pull/`
+segment). A custom destination is only allowed with one source.
 
-`--adopt` is for code you vendored by hand before using regraft: files that
-already exist with different content are tracked as-is instead of skipped.
-Nothing on disk is overwritten; the stored baseline is upstream's content at the
-pinned SHA, so your existing edits immediately classify as local modifications —
-record why with `regraft note`. (`--force` and `--adopt` are mutually
-exclusive: one overwrites, the other keeps.)
+Use `--adopt` for code you already copied by hand. Files that already exist with
+different content are kept as-is and tracked as local changes. Nothing on disk is
+overwritten. Record why those files differ with `regraft note`. `--force` and
+`--adopt` cannot be used together: one overwrites, the other keeps.
 
 ### `regraft diff [files...]`
 
-No writes to the project. Shows unified diffs of every modified tracked file
-against its vendored baseline (the upstream content at the pinned SHA), so you
-can see exactly what you changed — most useful right before writing a note.
-Missing files are listed without a diff; binary files are flagged and not
-diffed. For files that were resolved after a conflict, the baseline is still
-the pinned upstream content, so the diff shows your full customization.
+No writes. Shows what changed locally compared with the upstream content you
+copied from. This is most useful right before writing a note. Missing files are
+listed without a diff. Binary files are marked but not diffed. For files fixed
+after a conflict, the comparison is still against pinned upstream content, so the
+diff shows your full local change.
 
-`--upstream` flips direction: it compares upstream at the pinned SHA against
-the current remote head, per file — what a `pull` would bring in, shown as
-`modified` / `added` / `deleted` entries. Exits 1 when there are differences,
-0 when there are none (like `git diff`).
+`--upstream` shows what changed upstream since your pin: the files a future
+`regraft pull` would bring in. It reports `modified`, `added`, and `deleted`
+entries. Like `git diff`, it exits 1 when there are differences and 0 when
+there are none.
 
 ### `regraft note "<what and why>"`
 
-Record intent AFTER customizing. Default file set: every tracked file whose disk
-hash differs from the stored hash and is not already covered by an intent snapshot
-at its current hash. Use `--files <paths...>` to scope explicitly (explicit files
-may be snapshotted even if unmodified). Refuses when there is nothing to cover.
-Snapshots current disk hashes, appends the entry, and regenerates `PATCH.md`.
+Run this after you change copied code. By default, regraft records every tracked
+file that changed and is not already covered by a note. Use `--files <paths...>`
+to choose files yourself. regraft saves the current file hashes, appends the
+note, and regenerates `PATCH.md`. It refuses when there is nothing new to record.
 
 ### `regraft status`
 
-No writes. Checks each upstream ref for a new SHA and classifies every file:
-`clean` / `modified+intent` / `modified-unrecorded` / `missing` /
-`conflict-unresolved`. Exits 1 if anything is stale, unrecorded, missing, or
-unresolved — run it in CI to catch drift before it compounds.
+No writes. Checks whether upstream moved and labels every file as `clean`,
+`modified+intent`, `modified-unrecorded`, `missing`, or `conflict-unresolved`.
+Exits 1 when anything needs attention: new upstream commits, unrecorded local
+changes, missing files, or unresolved conflicts. This makes it useful in CI.
 
-`--offline` skips the upstream checks entirely (no network, and `git` is not
-invoked): `upstreamSha` and `stale` are reported as `null` per source, and the
-exit code reflects local state only.
+`--offline` skips upstream checks. It does not use the network or run `git`.
+`upstreamSha` and `stale` are `null` for each source, and the exit code reflects
+local files only.
 
 ### `regraft pull`
 
-The core. Per source: if the pinned SHA equals the upstream SHA, skip. Otherwise
-each file is handled per the classification table above. On conflict, diff3 markers
-are written in place, the file is added to the source's `unresolved` list (and
-**skipped on subsequent pulls** until resolved, so markers never stack), and a
-reconciliation brief is generated at `.regraft/briefs/<timestamp>.md` containing:
+Pull new upstream code. If a source is already at the latest upstream commit,
+regraft skips it. Otherwise, each file follows the table above. On conflict,
+regraft writes diff3 markers in place, marks the file as unresolved, and skips it
+on later pulls until you resolve it. That keeps conflict markers from stacking.
+It also writes a brief at `.regraft/briefs/<timestamp>.md` with:
 
-- the conflicted file list,
-- the FULL text of every intent whose files intersect the conflicts,
-- the upstream commit log between the old and new SHA scoped to the source path,
-- explicit instructions for the resolving agent.
+- the conflicted files,
+- the full text of every relevant note,
+- the upstream commit log between the old and new commit, scoped to the source path,
+- clear instructions for the person or agent fixing the conflict.
 
-The pinned SHA advances either way. `--force` takes upstream wholesale for
-conflicting files; `--dry-run` reports the plan and writes nothing.
+The pinned commit advances either way. `--force` takes the upstream version for
+conflicting files. `--dry-run` reports the plan and writes nothing.
 
-Before merging, pull also lists tracked files that are modified but not covered
-by any intent (`unrecordedModifications` in `--json`). This is a heads-up, never
-a failure — it exists because a brief can only include intent context that was
-recorded, so it prints the exact `regraft note ... --files ...` command to run.
+Before merging, `pull` also lists tracked files that changed locally without a
+note (`unrecordedModifications` in `--json`). This is a heads-up, not a failure.
+Briefs can only explain notes you recorded, so the output prints the exact
+`regraft note ... --files ...` command to run.
 
 ### `regraft resolve [files...]`
 
-Run after the agent/human fixes conflicts. Verifies no markers remain (errors
-listing offenders otherwise), clears the files from `unresolved` (default: all of
-them), and sets stored hash = disk hash. If the resolved content is not covered
-by an intent snapshot it exits 1 — the resolution itself **has succeeded** and is
-saved; the exit code only signals the one remaining step (record the intent, and
-the output prints the exact command). Pass `--note "<description>"` to do both
-in one step.
+Run this after conflicts are fixed. regraft checks that no conflict markers
+remain, clears the files from `unresolved`, and saves the new file hashes. If the
+fixed content is not covered by a note, the command exits 1 after saving the
+resolution. That exit code means one step remains: record why. Pass
+`--note "<description>"` to resolve and record the note in one step.
 
 ### `regraft remove <query> [--hard]`
 
@@ -197,10 +193,10 @@ regraft completion fish > ~/.config/fish/completions/regraft.fish
 
 ## JSON output shapes
 
-Every command except `update` accepts `--json` and prints exactly one JSON object to stdout.
-Errors in `--json` mode print `{ "error": "<message>", "exitCode": 1 }`.
-All paths are project-root-relative. Agents can pattern-match on these shapes;
-they are stable.
+Every command except `update` accepts `--json` and prints one JSON object to
+stdout. Errors in `--json` mode print `{ "error": "<message>", "exitCode": 1 }`.
+All paths are relative to the project root. These shapes are stable, so scripts
+and agents can rely on them.
 
 ### `regraft add --json`
 
@@ -224,8 +220,8 @@ they are stable.
 }
 ```
 
-`adopted` lists existing differing files tracked as local modifications
-(`--adopt`). With several sources in one call, the output is instead
+`adopted` lists existing files kept as local changes (`--adopt`). With several
+sources in one call, the output is instead
 `{ "command": "add", "exitCode": 0|1, "dryRun": bool, "results": [...] }` where
 each item of `results` has the single-source shape above.
 
@@ -343,9 +339,10 @@ its pinned SHA. `drifted` = some tracked file differs from its stored hash
 }
 ```
 
-`brief` is `null` when there was nothing to reconcile (or with `--dry-run`).
-`unrecordedModifications` lists tracked files that were locally modified without
-a recorded intent at pull time — informational only, it never affects the exit code.
+`brief` is `null` when no conflict brief was needed, or when `--dry-run` was
+used. `unrecordedModifications` lists tracked files that were changed locally
+without a note at pull time. It is informational only and never affects the exit
+code.
 
 ### `regraft resolve --json`
 
@@ -365,10 +362,11 @@ a recorded intent at pull time — informational only, it never affects the exit
 }
 ```
 
-When markers are still present: `exitCode` 1, `markersRemain` lists the offenders,
-nothing changes. When resolved without `--note` and uncovered: `exitCode` 1,
-`needsNote` lists the files, `note` is `null` (state IS updated; record the intent
-with `regraft note "<why>" --files <paths>`).
+When markers are still present, `exitCode` is 1, `markersRemain` lists the files,
+and nothing changes. When files are resolved without `--note` and the new content
+is not covered by a note, `exitCode` is 1, `needsNote` lists the files, and
+`note` is `null`. The state is still updated; finish with
+`regraft note "<why>" --files <paths>`.
 
 ### `regraft remove --json`
 
@@ -414,21 +412,21 @@ with `regraft note "<why>" --files <paths>`).
 }
 ```
 
-`sources[].files` keys are relative to `dest`; the key `""` means dest itself is
-the file (single-file sources). `intents[].files` keys are project-root-relative.
-The manifest is the source of truth; `PATCH.md` is regenerated from it.
+`sources[].files` keys are relative to `dest`. The key `""` means the destination
+itself is the file, which happens for single-file sources. `intents[].files` keys
+are relative to the project root. `regraft.json` is the source of truth;
+`PATCH.md` is regenerated from it.
 
 ## Scope
 
-regraft tracks live refs — branches, tags, and PR heads that keep moving.
+regraft tracks live refs: branches, tags, and PR heads that can keep moving.
 
-One-shot jobs like applying a single commit or a `.patch` file are left to git
+One-time jobs, like applying a single commit or a `.patch` file, are left to git
 (`cherry-pick`, `apply`, `am`). Registries, line-range tracking, and post-pull
-hooks are also out of scope: regraft is not trying to be a package manager.
+hooks are also out of scope. regraft is not trying to be a package manager.
 
-There is no authentication code at all. Fetching uses your existing git
-credentials, which is what lets regraft work with any host your git can already
-reach.
+regraft has no authentication code. Fetching uses your existing git credentials,
+so regraft works with any host your git can already reach.
 
 ## Development
 

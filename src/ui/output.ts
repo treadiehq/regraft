@@ -41,10 +41,10 @@ export function printAdd(r: AddResult): void {
   out(`${prefix}${bold("Added")} ${r.source.url} (${r.source.remoteRef}) at ${short(r.source.pinnedSha)} → ${r.source.dest}`);
   for (const p of r.written) out(`  ${green("wrote")}     ${p}`);
   for (const p of r.identical) out(`  ${dim("identical")} ${p} (tracked without writing)`);
-  for (const p of r.adopted) out(`  ${yellow("adopted")}   ${p} (kept your version; tracked as a local modification)`);
+  for (const p of r.adopted) out(`  ${yellow("kept")}      ${p} (kept your version; tracked as a local change)`);
   for (const s of r.skipped) out(`  ${yellow("skipped")}   ${s.path}: ${s.reason}`);
   const counts = [`${r.written.length} written`, `${r.identical.length} identical`];
-  if (r.adopted.length > 0) counts.push(`${r.adopted.length} adopted`);
+  if (r.adopted.length > 0) counts.push(`${r.adopted.length} kept`);
   counts.push(`${r.skipped.length} skipped`);
   out(`${prefix}${counts.join(", ")}.`);
   if (!r.dryRun && r.adopted.length > 0) {
@@ -88,12 +88,12 @@ export function printDiff(r: DiffResult): void {
     out();
   }
   if (!any) {
-    out(green(r.upstream ? "No upstream changes since the pinned commits." : "No local modifications."));
+    out(green(r.upstream ? "No upstream changes since the pinned commits." : "No local changes."));
   }
 }
 
 export function printNote(r: NoteResult): void {
-  out(`${bold("Recorded intent")} ${r.intent.id} (${r.intent.date.slice(0, 10)}):`);
+  out(`${bold("Recorded note")} ${r.intent.id} (${r.intent.date.slice(0, 10)}):`);
   out(`  ${r.intent.description}`);
   for (const p of Object.keys(r.intent.files)) out(`  ${green("snapshot")} ${p}`);
   out(dim("PATCH.md regenerated."));
@@ -137,11 +137,11 @@ export function printStatus(r: StatusResult): void {
   const problems: string[] = [];
   if (r.stale) problems.push("stale sources (run `regraft pull`)");
   const statuses = new Set(r.sources.flatMap((s) => s.files.map((f) => f.status)));
-  if (statuses.has("modified-unrecorded")) problems.push('unrecorded modifications (run `regraft note "<why>"`)');
+  if (statuses.has("modified-unrecorded")) problems.push('unrecorded local changes (run `regraft note "<why>"`)');
   if (statuses.has("conflict-unresolved")) problems.push("unresolved conflicts (fix markers, then `regraft resolve`)");
   if (statuses.has("missing")) problems.push("missing files");
   if (problems.length > 0) out(`${yellow("Attention:")} ${problems.join("; ")}.`);
-  else out(dim("Local modifications present, all covered by recorded intents."));
+  else out(dim("Local changes present, all covered by notes."));
 }
 
 function printPullSource(s: PullSourceResult, dry: boolean): void {
@@ -154,7 +154,7 @@ function printPullSource(s: PullSourceResult, dry: boolean): void {
   for (const p of s.added) out(`  ${green(`${verb}add`.padEnd(14))} ${p}`);
   for (const p of s.fastForwarded) out(`  ${green(`${verb}fast-forward`.padEnd(14))} ${p}`);
   for (const p of s.merged) out(`  ${green(`${verb}merge`.padEnd(14))} ${p}`);
-  for (const p of s.forced) out(`  ${yellow(`${verb}force`.padEnd(14))} ${p} (took upstream, local changes discarded)`);
+  for (const p of s.forced) out(`  ${yellow(`${verb}force`.padEnd(14))} ${p} (used upstream; local changes discarded)`);
   for (const p of s.deleted) out(`  ${yellow(`${verb}delete`.padEnd(14))} ${p}`);
   for (const p of s.conflicts) out(`  ${red("CONFLICT".padEnd(14))} ${p}`);
   for (const k of s.skipped) out(`  ${dim("skip".padEnd(14))} ${k.path}: ${k.reason}`);
@@ -171,7 +171,7 @@ export function printPull(r: PullResult): void {
     const n = r.unrecordedModifications.length;
     out(yellow(`Heads-up: ${n} modified tracked file${n === 1 ? " has" : "s have"} no recorded intent:`));
     for (const p of r.unrecordedModifications) out(`  ${p}`);
-    out("If these ever conflict, the reconciliation brief cannot explain why they changed. Record it:");
+    out("If these ever conflict, the brief cannot explain why they changed. Record it:");
     out(`  regraft note "<what and why>" --files ${r.unrecordedModifications.join(" ")}`);
     out();
   }
@@ -184,12 +184,12 @@ export function printPull(r: PullResult): void {
   out(red(`${conflictCount} conflict${conflictCount === 1 ? "" : "s"}, ${warningCount} warning${warningCount === 1 ? "" : "s"}.`));
   if (r.brief) {
     out();
-    out(bold("Reconciliation brief written to:"));
+    out(bold("Conflict brief written to:"));
     out(bold(`  ${r.brief}`));
     out();
-    out('Next: read the brief, reconcile each conflict, then run `regraft resolve --note "<how>"`.');
+    out('Next: read the brief, fix each conflict, then run `regraft resolve --note "<how>"`.');
   } else if (r.dryRun) {
-    out(dim("A reconciliation brief would be generated (run without --dry-run)."));
+    out(dim("A conflict brief would be generated (run without --dry-run)."));
   }
 }
 
@@ -206,16 +206,16 @@ export function printResolve(r: ResolveResult): void {
   }
   for (const p of r.resolved) out(`  ${green("resolved")} ${p}`);
   if (r.note) {
-    out(`${bold("Recorded intent")} ${r.note.id}: ${r.note.description}`);
+    out(`${bold("Recorded note")} ${r.note.id}: ${r.note.description}`);
   }
   if (r.needsNote.length > 0) {
     out();
     out(`${green("Conflicts resolved")} — files are unlocked for future pulls.`);
-    out(yellow("One step left") + " — record why, so PATCH.md stays trustworthy (this command exits 1 until then):");
-    out(`  regraft note "<how the conflicts were reconciled>" --files ${r.needsNote.join(" ")}`);
+    out(yellow("One step left") + " — record why, so PATCH.md stays useful (this command exits 1 until then):");
+    out(`  regraft note "<how the conflicts were fixed>" --files ${r.needsNote.join(" ")}`);
     out(dim('Tip: next time, `regraft resolve --note "<why>"` does both in one step.'));
   } else {
-    out(green("All resolved files are covered by recorded intents."));
+    out(green("All resolved files are covered by notes."));
   }
 }
 
@@ -227,5 +227,5 @@ export function printRemove(r: RemoveResult): void {
   out(`${bold("Removed")} ${r.removed.url}${r.removed.path ? ` #${r.removed.path}` : ""} → ${r.removed.dest} from tracking.`);
   for (const p of r.deletedFiles) out(`  ${yellow("deleted")} ${p}`);
   if (!r.hard) out(dim("Files were left on disk (use --hard to also delete them)."));
-  out(dim("Intent entries were kept as history; orphaned ones are marked in PATCH.md."));
+  out(dim("Notes were kept as history; orphaned ones are marked in PATCH.md."));
 }

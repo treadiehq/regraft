@@ -134,7 +134,7 @@ function diffLocal(root: string, source: Source, filter: Set<string> | null): Di
     const baselineNote =
       sha256(baseBuf) === stored
         ? null
-        : "baseline is the pinned upstream content; this diff includes earlier merged/resolved customizations";
+        : "baseline is the pinned upstream content; this diff includes earlier fixed local changes";
     result.files.push({
       path: proj,
       change: "modified",

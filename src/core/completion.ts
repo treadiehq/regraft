@@ -9,12 +9,12 @@ interface CommandSpec {
 }
 
 const COMMANDS: readonly CommandSpec[] = [
-  { name: "add", description: "Vendor files or directories from upstream git repos", options: ["--force", "--adopt", "--dry-run", "--json"] },
-  { name: "diff", description: "Show local edits vs the baseline, or upstream movement", options: ["--upstream", "--json"] },
-  { name: "note", description: "Record the intent behind local customizations", options: ["--files", "--json"] },
-  { name: "status", description: "Classify tracked files and check upstreams for new commits", options: ["--offline", "--json"] },
-  { name: "pull", description: "Pull upstream updates via three-way merge", options: ["--dry-run", "--force", "--json"] },
-  { name: "resolve", description: "Mark conflicted files as reconciled", options: ["--note", "--json"] },
+  { name: "add", description: "Copy files or directories from git repos", options: ["--force", "--adopt", "--dry-run", "--json"] },
+  { name: "diff", description: "Show local changes, or upstream changes", options: ["--upstream", "--json"] },
+  { name: "note", description: "Record why you changed tracked files", options: ["--files", "--json"] },
+  { name: "status", description: "Check tracked files and upstream updates", options: ["--offline", "--json"] },
+  { name: "pull", description: "Pull upstream updates into tracked files", options: ["--dry-run", "--force", "--json"] },
+  { name: "resolve", description: "Finish conflicts after fixing files", options: ["--note", "--json"] },
   { name: "remove", description: "Stop tracking a source", options: ["--hard", "--json"] },
   { name: "update", description: "Update regraft itself to the latest release", options: [] },
   { name: "completion", description: "Print a shell completion script", options: [] },
