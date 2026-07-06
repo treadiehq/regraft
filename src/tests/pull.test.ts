@@ -113,9 +113,33 @@ describe("regraft pull", () => {
     expect(second.sources[0]!.conflicts).toEqual([]);
     expect(second.sources[0]!.skipped[0]).toMatchObject({ path: "vendor/file.txt" });
     expect(second.sources[0]!.skipped[0]!.reason).toContain("resolve");
+    expect(second.sources[0]!.warnings[0]).toMatchObject({ path: "vendor/file.txt" });
+    expect(second.sources[0]!.warnings[0]!.message).toContain("upstream changed");
     // untouched: same single set of markers
     expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe(conflicted);
     expect((conflicted.match(/<<<<<<</g) ?? []).length).toBe(1);
+  });
+
+  it("warns when upstream deletes an unresolved file on a later pull", () => {
+    const { up, project } = setup();
+    writeFiles(project, { "vendor/file.txt": BASE.replace("line4", "LOCAL line4") });
+    commitUpstream(up, { "lib/file.txt": BASE.replace("line4", "UPSTREAM line4") });
+    pullCommand({ cwd: project });
+    const conflicted = readFileSync(join(project, "vendor/file.txt"), "utf8");
+
+    const v3 = commitUpstream(up, {}, { remove: ["lib/file.txt"], message: "delete conflicted file" });
+    const second = pullCommand({ cwd: project });
+
+    expect(second.exitCode).toBe(1);
+    expect(second.sources[0]!.skipped[0]).toMatchObject({ path: "vendor/file.txt" });
+    expect(second.sources[0]!.warnings[0]).toMatchObject({ path: "vendor/file.txt" });
+    expect(second.sources[0]!.warnings[0]!.message).toContain("deleted");
+    expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe(conflicted);
+    expect(loadManifest(project)!.sources[0]!.pinnedSha).toBe(v3);
+    expect(second.brief).not.toBeNull();
+    const brief = readFileSync(join(project, second.brief!), "utf8");
+    expect(brief).toContain("vendor/file.txt");
+    expect(brief).toContain("delete conflicted file");
   });
 
   it("adds new upstream files and deletes upstream-deleted unmodified files", () => {

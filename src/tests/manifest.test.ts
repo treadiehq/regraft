@@ -66,6 +66,23 @@ describe("manifest load/save", () => {
     expect(() => loadManifest(dir)).toThrow(/pinnedSha/);
   });
 
+  it("rejects project path traversal in manifest-controlled paths", () => {
+    const cases: [string, (manifest: Manifest) => void][] = [
+      ["sources.0.dest", (manifest) => void (manifest.sources[0]!.dest = "../outside")],
+      ["sources.0.files", (manifest) => void (manifest.sources[0]!.files = { "../outside.ts": HASH })],
+      ["sources.0.unresolved", (manifest) => void (manifest.sources[0]!.unresolved = ["../outside.ts"])],
+      ["intents.0.files", (manifest) => void (manifest.intents[0]!.files = { "../outside.ts": HASH })],
+    ];
+
+    for (const [path, mutate] of cases) {
+      const dir = makeTempDir();
+      const bad = sampleManifest();
+      mutate(bad);
+      writeFileSync(join(dir, "regraft.json"), JSON.stringify(bad));
+      expect(() => loadManifest(dir), path).toThrow(/project-relative/);
+    }
+  });
+
   it("rejects unknown manifest versions", () => {
     const dir = makeTempDir();
     writeFileSync(join(dir, "regraft.json"), JSON.stringify({ version: 2, sources: [], intents: [] }));

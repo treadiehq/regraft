@@ -1,8 +1,35 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { assertSafeProjectPath } from "./workspace";
 
 export const MANIFEST_FILE = "regraft.json";
+const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/, "must be a sha256 hex digest");
+
+function safeProjectPathSchema(label: string, opts: { allowEmpty?: boolean } = {}) {
+  return z.string().transform((p, ctx) => {
+    try {
+      return assertSafeProjectPath(p, label, opts);
+    } catch (err) {
+      ctx.addIssue({ code: "custom", message: (err as Error).message });
+      return z.NEVER;
+    }
+  });
+}
+
+function safeProjectPathRecordSchema(label: string, opts: { allowEmpty?: boolean } = {}) {
+  return z.record(z.string(), sha256Schema).transform((rec, ctx) => {
+    const safeEntries: [string, string][] = [];
+    for (const [path, hash] of Object.entries(rec)) {
+      try {
+        safeEntries.push([assertSafeProjectPath(path, label, opts), hash]);
+      } catch (err) {
+        ctx.addIssue({ code: "custom", path: [path], message: (err as Error).message });
+      }
+    }
+    return ctx.issues.length > 0 ? z.NEVER : Object.fromEntries(safeEntries);
+  });
+}
 
 const sourceSchema = z.object({
   /** Git URL fetched via the user's git (https, ssh, file://, ...). */
@@ -12,7 +39,7 @@ const sourceSchema = z.object({
   /** Subpath inside the upstream repo. "" means repo root. */
   path: z.string(),
   /** Local path (project-root-relative) the source is vendored into. */
-  dest: z.string().min(1),
+  dest: safeProjectPathSchema("sources.dest"),
   /** Upstream commit we last reconciled against. */
   pinnedSha: z.string().regex(/^[0-9a-f]{40}$/, "must be a 40-char lowercase git SHA"),
   /**
@@ -20,9 +47,9 @@ const sourceSchema = z.object({
    * resolve time). Keys are paths relative to dest; "" means dest itself
    * is the file (single-file sources).
    */
-  files: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/, "must be a sha256 hex digest")),
+  files: safeProjectPathRecordSchema("sources.files key", { allowEmpty: true }),
   /** Files (relative to dest) with unresolved conflict markers from a pull. */
-  unresolved: z.array(z.string()),
+  unresolved: z.array(safeProjectPathSchema("sources.unresolved entry", { allowEmpty: true })),
 });
 
 const intentSchema = z.object({
@@ -33,7 +60,7 @@ const intentSchema = z.object({
   /** Plain-English description of what was changed and why. */
   description: z.string().min(1),
   /** Project-root-relative path -> sha256 of the file when recorded. */
-  files: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/, "must be a sha256 hex digest")),
+  files: safeProjectPathRecordSchema("intents.files key"),
 });
 
 export const manifestSchema = z.object({

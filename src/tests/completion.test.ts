@@ -18,6 +18,12 @@ describe("regraft completion", () => {
     expect(completionScript("fish")).toContain("-l hard");
   });
 
+  it("includes completion command flags alongside shell choices", () => {
+    expect(completionScript("bash")).toContain('completion) opts="bash zsh fish --json --help"');
+    expect(completionScript("zsh")).toContain("completion) opts=(bash zsh fish --json --help)");
+    expect(completionScript("fish")).toContain("complete -c regraft -n '__fish_seen_subcommand_from completion' -l json");
+  });
+
   it("rejects unsupported shells with the supported list", () => {
     expect(() => completionScript("powershell")).toThrow(/Supported: bash, zsh, fish/);
   });

@@ -19,6 +19,15 @@ $ErrorActionPreference = 'Stop'
 function Say($msg) { Write-Host "-> $msg" -ForegroundColor DarkGray }
 function Ok($msg)  { Write-Host "OK $msg"  -ForegroundColor Green }
 function Die($msg) { Write-Host "x $msg"   -ForegroundColor Red; exit 1 }
+function Get-RegraftVersion($path) {
+  try {
+    $output = & $path --version 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    return ($output | Out-String).Trim()
+  } catch {
+    return $null
+  }
+}
 
 $repo    = if ($env:REGRAFT_REPO)    { $env:REGRAFT_REPO }    else { 'treadiehq/regraft' }
 $version = if ($env:REGRAFT_VERSION) { $env:REGRAFT_VERSION } else { 'latest' }
@@ -51,18 +60,46 @@ try {
   Die "download failed: $url`n  - no release asset for Windows yet, or`n  - the version tag does not exist (check: https://github.com/$repo/releases)"
 }
 
+$downloaded = Get-RegraftVersion $tmp
+if (-not $downloaded) {
+  try { Remove-Item $tmp -Force -ErrorAction Stop } catch {}
+  Die "the downloaded binary failed to run ($tmp); existing install was left untouched"
+}
+
+function Restore-Old {
+  if (Test-Path $old) {
+    try {
+      Move-Item -Path $old -Destination $dest -Force -ErrorAction Stop
+      Say "rolled back to the previous regraft binary"
+    } catch {
+      Write-Host "warning: failed to restore previous regraft binary from $old" -ForegroundColor Yellow
+    }
+  }
+}
+
 # Windows locks a running .exe, but it can still be renamed — move the old one
 # aside so an in-place `regraft update` works, then drop the freshly downloaded one in.
 if (Test-Path $dest) {
-  try { Move-Item -Path $dest -Destination $old -Force } catch {}
+  try {
+    Move-Item -Path $dest -Destination $old -Force -ErrorAction Stop
+  } catch {
+    try { Remove-Item $tmp -Force -ErrorAction Stop } catch {}
+    Die "could not back up existing binary ($dest)"
+  }
 }
-Move-Item -Path $tmp -Destination $dest -Force
-
 try {
-  $installed = (& $dest --version).Trim()
+  Move-Item -Path $tmp -Destination $dest -Force -ErrorAction Stop
 } catch {
+  Restore-Old
+  Die "could not install binary to $dest"
+}
+
+$installed = Get-RegraftVersion $dest
+if (-not $installed) {
+  Restore-Old
   Die "the installed binary failed to run ($dest)"
 }
+if (Test-Path $old) { try { Remove-Item $old -Force -ErrorAction Stop } catch {} }
 Ok "installed regraft $installed -> $dest"
 
 # --- ensure the install dir is on the user PATH ------------------------------

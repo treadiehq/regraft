@@ -159,6 +159,12 @@ describe("regraft add", () => {
     );
   });
 
+  it("rejects destinations outside the project", () => {
+    const project = makeProject();
+    expect(() => addCommand("file:///tmp/upstream", "../outside", { cwd: project })).toThrow(/project-relative/);
+    expect(() => addCommand("file:///tmp/upstream", "/tmp/outside", { cwd: project })).toThrow(/project-relative/);
+  });
+
   it("tracks a PR head (refs/pull/N/head) as a live ref", () => {
     const up = initUpstream({ "lib/a.ts": "pr content\n" });
     git(up.dir, "update-ref", "refs/pull/1/head", up.sha);

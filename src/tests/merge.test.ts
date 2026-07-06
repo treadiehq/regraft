@@ -45,6 +45,19 @@ describe("hasConflictMarkers", () => {
     expect(hasConflictMarkers("x\n>>>>>>> upstream\ny\n")).toBe(true);
   });
 
+  it("detects git markers with empty labels", () => {
+    expect(hasConflictMarkers("x\n<<<<<<< \ny\n")).toBe(true);
+    expect(hasConflictMarkers("x\n||||||| \ny\n")).toBe(true);
+    expect(hasConflictMarkers("x\n>>>>>>> \ny\n")).toBe(true);
+  });
+
+  it("does not fire on bare marker sequences", () => {
+    expect(hasConflictMarkers("x\n<<<<<<<\ny\n")).toBe(false);
+    expect(hasConflictMarkers("x\n|||||||\ny\n")).toBe(false);
+    expect(hasConflictMarkers("x\n>>>>>>>\ny\n")).toBe(false);
+    expect(hasConflictMarkers("x\n<<<<<<<")).toBe(false);
+  });
+
   it("does not fire on ======= alone (setext headings, dividers)", () => {
     expect(hasConflictMarkers("Title\n=======\nbody\n")).toBe(false);
   });

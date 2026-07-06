@@ -39,7 +39,9 @@ export function briefsDir(root: string): string {
  * rel === "" means the source is a single file and dest IS the file.
  */
 export function projectPath(dest: string, rel: string): string {
-  return rel === "" ? dest : `${dest}/${rel}`;
+  const safeDest = assertSafeProjectPath(dest, "dest");
+  const safeRel = assertSafeProjectPath(rel, "tracked file path", { allowEmpty: true });
+  return safeRel === "" ? safeDest : `${safeDest}/${safeRel}`;
 }
 
 /** Upstream repo path of a tracked file (source.path joined with rel). */
@@ -50,7 +52,34 @@ export function upstreamPath(sourcePath: string, rel: string): string {
 
 /** Normalize a user-supplied project-relative path. */
 export function normalizeUserPath(p: string): string {
-  return p.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  const normalized = normalizeProjectPathText(p);
+  return assertSafeProjectPath(normalized, "path", { allowEmpty: true });
+}
+
+function normalizeProjectPathText(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+}
+
+export function assertSafeProjectPath(p: string, label = "path", opts: { allowEmpty?: boolean } = {}): string {
+  let normalized = normalizeProjectPathText(p);
+  if (normalized === "") {
+    if (opts.allowEmpty) return normalized;
+    throw new Error(`${label} must not be empty.`);
+  }
+  if (normalized.includes("\0")) throw new Error(`${label} must be project-relative and must not contain NUL bytes.`);
+  if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) {
+    throw new Error(`${label} must be project-relative, not absolute: ${p}`);
+  }
+  const parts = normalized.split("/");
+  if (parts.some((part) => part === "..")) {
+    throw new Error(`${label} must be project-relative and must not contain ".." segments: ${p}`);
+  }
+  normalized = parts.filter((part) => part !== ".").join("/");
+  if (normalized === "") {
+    if (opts.allowEmpty) return normalized;
+    throw new Error(`${label} must not be empty.`);
+  }
+  return normalized;
 }
 
 /** Write a file, creating parent directories as needed. */

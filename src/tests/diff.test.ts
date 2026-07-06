@@ -3,11 +3,17 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { addCommand } from "../commands/add";
 import { diffCommand } from "../commands/diff";
+import { unifiedDiff } from "../core/diff";
 import { cleanupTempDirs, commitUpstream, initUpstream, makeProject, writeFiles } from "./helpers";
 
 afterAll(cleanupTempDirs);
 
 describe("regraft diff (local drift)", () => {
+  it("rejects unsafe diff labels before writing temp files", () => {
+    expect(() => unifiedDiff("../../escaped.txt", Buffer.from("a\n"), Buffer.from("b\n"))).toThrow(/project-relative/);
+    expect(() => unifiedDiff("/tmp/escaped.txt", Buffer.from("a\n"), Buffer.from("b\n"))).toThrow(/project-relative/);
+  });
+
   it("shows a unified diff of local edits against the vendored baseline", () => {
     const up = initUpstream({ "lib/theme.ts": "old tokens\n", "lib/util.ts": "util\n" });
     const project = makeProject();

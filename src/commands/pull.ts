@@ -194,6 +194,16 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
     // Unresolved conflicts from a previous pull are skipped until resolved,
     // so markers never stack.
     if (source.unresolved.includes(rel)) {
+      const oldBuf = oldSet.has(rel) ? readFileAt(cache, oldSha, upstreamPath(source.path, rel)) : null;
+      const oldHash = oldBuf === null ? null : sha256(oldBuf);
+      if (oldHash !== newHash) {
+        result.warnings.push({
+          path: proj,
+          message: inNew
+            ? "upstream changed this file while it had an unresolved conflict; skipped until resolved"
+            : "upstream deleted this file while it had an unresolved conflict; kept your conflicted copy",
+        });
+      }
       result.skipped.push({ path: proj, reason: "unresolved conflict from a previous pull; run `regraft resolve` first" });
       continue;
     }

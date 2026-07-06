@@ -17,11 +17,11 @@ const COMMANDS: readonly CommandSpec[] = [
   { name: "resolve", description: "Finish conflicts after fixing files", options: ["--note", "--json"] },
   { name: "remove", description: "Stop tracking a source", options: ["--hard", "--json"] },
   { name: "update", description: "Update regraft itself to the latest release", options: [] },
-  { name: "completion", description: "Print a shell completion script", options: [] },
+  { name: "completion", description: "Print a shell completion script", options: ["--json"] },
 ];
 
 function optionWords(c: CommandSpec): string[] {
-  return c.name === "completion" ? [...COMPLETION_SHELLS, "--help"] : [...c.options, "--help"];
+  return c.name === "completion" ? [...COMPLETION_SHELLS, ...c.options, "--help"] : [...c.options, "--help"];
 }
 
 function bashScript(): string {

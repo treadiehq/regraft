@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { assertSafeProjectPath } from "./workspace";
 
 /**
  * Unified diff between two buffers, rendered by `git diff --no-index` with
@@ -9,10 +10,11 @@ import { dirname, join } from "node:path";
  * Returns "" when the contents are identical.
  */
 export function unifiedDiff(projPath: string, before: Buffer, after: Buffer): string {
+  const safeProjPath = assertSafeProjectPath(projPath, "diff path");
   const dir = mkdtempSync(join(tmpdir(), "regraft-diff-"));
   try {
-    const beforePath = join(dir, "a", projPath);
-    const afterPath = join(dir, "b", projPath);
+    const beforePath = join(dir, "a", safeProjPath);
+    const afterPath = join(dir, "b", safeProjPath);
     mkdirSync(dirname(beforePath), { recursive: true });
     mkdirSync(dirname(afterPath), { recursive: true });
     writeFileSync(beforePath, before);
@@ -20,7 +22,7 @@ export function unifiedDiff(projPath: string, before: Buffer, after: Buffer): st
     try {
       execFileSync(
         "git",
-        ["-C", dir, "diff", "--no-index", "--no-prefix", "--", `a/${projPath}`, `b/${projPath}`],
+        ["-C", dir, "diff", "--no-index", "--no-prefix", "--", `a/${safeProjPath}`, `b/${safeProjPath}`],
         { maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
       );
       return "";

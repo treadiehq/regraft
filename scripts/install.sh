@@ -76,12 +76,35 @@ if ! curl -fSL --progress-bar "$URL" -o "$TMP/$BIN_NAME"; then
 fi
 
 chmod +x "$TMP/$BIN_NAME"
-mv -f "$TMP/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
-
-if ! "$BIN_DIR/$BIN_NAME" --version >/dev/null 2>&1; then
-  die "the installed binary failed to run ($BIN_DIR/$BIN_NAME)"
+if ! "$TMP/$BIN_NAME" --version >/dev/null 2>&1; then
+  die "the downloaded binary failed to run (${TMP}/${BIN_NAME}); existing install was left untouched"
 fi
-ok "installed ${bold}regraft $("$BIN_DIR/$BIN_NAME" --version)${reset} → $BIN_DIR/$BIN_NAME"
+
+DEST="$BIN_DIR/$BIN_NAME"
+OLD="$TMP/$BIN_NAME.old"
+rollback() {
+  if [ -f "$OLD" ]; then
+    if mv -f "$OLD" "$DEST" 2>/dev/null; then
+      say "rolled back to the previous regraft binary"
+    else
+      printf '%s\n' "${red}warning:${reset} failed to restore previous regraft binary from $OLD" >&2
+    fi
+  fi
+}
+
+if [ -f "$DEST" ]; then
+  mv -f "$DEST" "$OLD" || die "could not back up existing binary ($DEST)"
+fi
+if ! mv -f "$TMP/$BIN_NAME" "$DEST"; then
+  rollback
+  die "could not install binary to $DEST"
+fi
+
+if ! "$DEST" --version >/dev/null 2>&1; then
+  rollback
+  die "the installed binary failed to run ($DEST)"
+fi
+ok "installed ${bold}regraft $("$DEST" --version)${reset} → $DEST"
 
 # --- PATH hint ---------------------------------------------------------------
 case ":$PATH:" in

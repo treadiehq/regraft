@@ -57,7 +57,7 @@ export function mergeThreeWay(input: { base: Buffer; ours: Buffer; theirs: Buffe
   }
 }
 
-const MARKER_RE = /^(?:<{7}|\|{7}|>{7})(?: |$)/m;
+const MARKER_RE = /^(?:<{7}|\|{7}|>{7}) /m;
 
 /** Detect diff3 conflict markers at line starts. */
 export function hasConflictMarkers(content: Buffer | string): boolean {
