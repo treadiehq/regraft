@@ -115,4 +115,5 @@ to run — run it to finish.
 - Never edit `regraft.json` by hand unless a command's error message tells you to.
 - Never leave a tracked file modified without a `regraft note` entry.
 - Never re-run `regraft pull` to "fix" unresolved conflicts — unresolved files are
-  skipped until you run `regraft resolve`.
+  skipped until you run `regraft resolve` (warnings are emitted if upstream changes
+  or deletes them in the meantime).

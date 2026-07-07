@@ -134,7 +134,10 @@ Pull new upstream code. If a source is already at the latest upstream commit,
 regraft skips it. Otherwise, each file follows the table above. On conflict,
 regraft writes diff3 markers in place, marks the file as unresolved, and skips it
 on later pulls until you resolve it. That keeps conflict markers from stacking.
-It also writes a brief at `.regraft/briefs/<timestamp>.md` with:
+If upstream changes or deletes a file that still has unresolved conflict markers,
+regraft emits a warning (e.g., "upstream changed this file while it had an
+unresolved conflict; skipped until resolved"). It also writes a brief at
+`.regraft/briefs/<timestamp>.md` with:
 
 - the conflicted files,
 - the full text of every relevant note,
@@ -183,6 +186,8 @@ echo 'eval "$(regraft completion bash)"' >> ~/.bashrc
 regraft completion zsh > ~/.zfunc/_regraft                     # fpath+=(~/.zfunc) before compinit
 regraft completion fish > ~/.config/fish/completions/regraft.fish
 ```
+
+Accepts `--json` to print the script in JSON format instead.
 
 ## Exit codes
 
@@ -333,7 +338,10 @@ its pinned SHA. `drifted` = some tracked file differs from its stored hash
       "deleted": ["lib/components/legacy.ts"],
       "conflicts": ["lib/components/theme.ts"],
       "skipped": [{ "path": "lib/components/old-conflict.ts", "reason": "unresolved conflict from a previous pull; run `regraft resolve` first" }],
-      "warnings": [{ "path": "lib/components/logo.png", "message": "binary file changed both locally and upstream; kept the local version (re-run with --force to take upstream)" }]
+      "warnings": [
+        { "path": "lib/components/old-conflict.ts", "message": "upstream changed this file while it had an unresolved conflict; skipped until resolved" },
+        { "path": "lib/components/logo.png", "message": "binary file changed both locally and upstream; kept the local version (re-run with --force to take upstream)" }
+      ]
     }
   ]
 }
@@ -367,6 +375,20 @@ and nothing changes. When files are resolved without `--note` and the new conten
 is not covered by a note, `exitCode` is 1, `needsNote` lists the files, and
 `note` is `null`. The state is still updated; finish with
 `regraft note "<why>" --files <paths>`.
+
+### `regraft completion --json`
+
+```json
+{
+  "command": "completion",
+  "exitCode": 0,
+  "shell": "zsh",
+  "script": "#compdef regraft\n..."
+}
+```
+
+`shell` is one of `bash`, `zsh`, or `fish`. `script` contains the full completion
+script for that shell.
 
 ### `regraft remove --json`
 
