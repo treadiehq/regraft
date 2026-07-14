@@ -1,97 +1,160 @@
-import { intentHashesByPath } from "../core/classify";
-import { hashFileIfExists, readFileIfExists, sha256 } from "../core/hash";
-import { requireManifest, saveManifest, type Intent, type Source } from "../core/manifest";
+import { resolveGrafts } from "../core/grafts";
+import { ensureGitAvailable } from "../core/git";
+import { readFileIfExists, sha256 } from "../core/hash";
+import { MutationJournal } from "../core/journal";
+import { MANIFEST_FILE, requireManifest, saveManifest, type Graft } from "../core/manifest";
 import { hasConflictMarkers } from "../core/merge";
-import { writePatchMd } from "../core/patchmd";
-import { findRoot, managedFilePath, normalizeUserPath, projectPath } from "../core/workspace";
-import { recordIntent } from "./note";
+import { hydratePendingTarget } from "../core/pending";
+import { PATCH_MD_FILE, writePatchMd } from "../core/patchmd";
+import { findRoot, managedFilePath, normalizeUserPath, projectPath, withWorkspaceLock } from "../core/workspace";
+import { presentIntent, recordIntent, type IntentResult, type IntentSnapshot } from "./note";
 
 export interface ResolveOptions {
   cwd: string;
   files?: string[];
+  grafts?: string[];
   note?: string;
 }
 
 export interface ResolveResult {
   command: "resolve";
   exitCode: 0 | 1;
-  /** Files cleared from unresolved (stored hash updated to disk). */
   resolved: string[];
-  /** Files that still contain conflict markers (nothing was changed). */
   markersRemain: string[];
-  /** Resolved files whose content is not covered by any intent snapshot. */
   needsNote: string[];
-  /** The intent recorded via --note, or null. */
-  note: Intent | null;
+  note: IntentResult | null;
+}
+
+interface PendingEntry {
+  graft: Graft;
+  rel: string;
 }
 
 export function resolveCommand(opts: ResolveOptions): ResolveResult {
   const root = findRoot(opts.cwd);
-  const manifest = requireManifest(root);
+  return withWorkspaceLock(root, () => {
+    const journal = new MutationJournal(root);
+    try {
+      return resolveCommandUnlocked(opts, journal);
+    } catch (error) {
+      journal.rollback();
+      throw error;
+    }
+  });
+}
 
-  const unresolvedMap = new Map<string, { source: Source; rel: string }>();
-  for (const source of manifest.sources) {
-    for (const rel of source.unresolved) {
-      unresolvedMap.set(projectPath(source.dest, rel), { source, rel });
+function resolveCommandUnlocked(opts: ResolveOptions, journal: MutationJournal): ResolveResult {
+  const root = findRoot(opts.cwd);
+  const manifest = requireManifest(root);
+  const selected = resolveGrafts(manifest, opts.grafts);
+  const pendingMap = new Map<string, PendingEntry>();
+  for (const graft of selected) {
+    for (const [rel, file] of Object.entries(graft.files)) {
+      if (file.pending) pendingMap.set(projectPath(graft.dest, rel), { graft, rel });
+    }
+  }
+  if ([...pendingMap.values()].some(({ graft, rel }) => graft.files[rel]?.pending?.targetKnown === false)) {
+    ensureGitAvailable();
+    for (const { graft, rel } of pendingMap.values()) {
+      const file = graft.files[rel];
+      if (file) hydratePendingTarget(root, graft, rel, file);
     }
   }
 
   let targets: string[];
   if (opts.files && opts.files.length > 0) {
-    targets = opts.files.map(normalizeUserPath);
-    for (const t of targets) {
-      if (!unresolvedMap.has(t)) {
-        const listed = [...unresolvedMap.keys()].join(", ") || "(none)";
-        throw new Error(`"${t}" is not marked unresolved. Unresolved files: ${listed}`);
+    targets = [...new Set(opts.files.map(normalizeUserPath))];
+    for (const target of targets) {
+      if (!pendingMap.has(target)) {
+        const listed = [...pendingMap.keys()].join(", ") || "(none)";
+        throw new Error(`"${target}" has no pending judgment in the selected Grafts. Pending files: ${listed}`);
       }
     }
   } else {
-    targets = [...unresolvedMap.keys()].sort();
+    targets = [...pendingMap.keys()].sort();
   }
 
   if (targets.length === 0) {
     return { command: "resolve", exitCode: 0, resolved: [], markersRemain: [], needsNote: [], note: null };
   }
 
-  // Verify every target is marker-free before touching any state.
+  const diskHashes = new Map<string, string | null>();
   const markersRemain: string[] = [];
-  const diskHashes = new Map<string, string>();
-  for (const t of targets) {
-    const buf = readFileIfExists(managedFilePath(root, t));
-    if (buf === null) {
-      throw new Error(`"${t}" is missing from disk. Restore it (or take upstream with \`regraft pull --force\`) before resolving.`);
+  for (const target of targets) {
+    const entry = pendingMap.get(target)!;
+    const file = entry.graft.files[entry.rel]!;
+    const buffer = readFileIfExists(managedFilePath(root, target));
+    const hash = buffer === null ? null : sha256(buffer);
+    diskHashes.set(target, hash);
+    if (
+      buffer !== null &&
+      (file.pending?.kind === "content-conflict" || file.pending?.kind === "legacy-conflict") &&
+      hasConflictMarkers(buffer)
+    ) {
+      markersRemain.push(target);
     }
-    if (hasConflictMarkers(buf)) markersRemain.push(t);
-    else diskHashes.set(t, sha256(buf));
   }
   if (markersRemain.length > 0) {
     return { command: "resolve", exitCode: 1, resolved: [], markersRemain, needsNote: [], note: null };
   }
 
-  for (const t of targets) {
-    const entry = unresolvedMap.get(t);
-    if (!entry) continue;
-    entry.source.unresolved = entry.source.unresolved.filter((rel) => rel !== entry.rel);
-    entry.source.files[entry.rel] = diskHashes.get(t) as string;
+  const snapshots: IntentSnapshot[] = [];
+  const needsNote: string[] = [];
+  for (const target of targets) {
+    const entry = pendingMap.get(target)!;
+    const file = entry.graft.files[entry.rel]!;
+    const pending = file.pending!;
+    const diskHash = diskHashes.get(target) ?? null;
+    const retainedAdaptation = diskHash !== pending.targetHash;
+    const alreadyExplained =
+      retainedAdaptation &&
+      !file.needsIntent &&
+      file.intentIds.length > 0 &&
+      diskHash === file.localHash;
+
+    if (diskHash === null && pending.targetHash === null) {
+      delete entry.graft.files[entry.rel];
+      continue;
+    }
+
+    file.upstreamHash = pending.targetHash;
+    file.localHash = diskHash;
+    file.pending = null;
+    if (!retainedAdaptation) {
+      file.intentIds = [];
+      file.needsIntent = false;
+    } else if (opts.note?.trim()) {
+      snapshots.push({ graft: entry.graft, rel: entry.rel, path: target, hash: diskHash });
+    } else {
+      file.needsIntent = !alreadyExplained;
+      if (!alreadyExplained) needsNote.push(target);
+    }
   }
 
-  let note: Intent | null = null;
-  let needsNote: string[] = [];
-  if (opts.note && opts.note.trim()) {
-    const files: Record<string, string> = {};
-    for (const t of targets) files[t] = diskHashes.get(t) as string;
-    note = recordIntent(manifest, opts.note, files);
-  } else {
-    const intentHashes = intentHashesByPath(manifest.intents);
-    needsNote = targets.filter((t) => {
-      const disk = hashFileIfExists(managedFilePath(root, t));
-      return disk === null || !intentHashes.get(t)?.has(disk);
-    });
+  let note: IntentResult | null = null;
+  if (opts.note?.trim()) {
+    const describedTargets =
+      snapshots.length > 0
+        ? snapshots
+        : targets
+            .map((target) => {
+              const entry = pendingMap.get(target)!;
+              if (!entry.graft.files[entry.rel]) return null;
+              return {
+                graft: entry.graft,
+                rel: entry.rel,
+                path: target,
+                hash: diskHashes.get(target) ?? null,
+              };
+            })
+            .filter((snapshot): snapshot is IntentSnapshot => snapshot !== null);
+    if (describedTargets.length > 0) note = presentIntent(recordIntent(manifest, opts.note, describedTargets));
   }
 
+  journal.capture(MANIFEST_FILE);
+  journal.capture(PATCH_MD_FILE);
   saveManifest(root, manifest);
   writePatchMd(root, manifest);
-
   return {
     command: "resolve",
     exitCode: needsNote.length > 0 ? 1 : 0,

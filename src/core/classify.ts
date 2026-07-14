@@ -1,5 +1,5 @@
 import { hashFileIfExists } from "./hash";
-import type { Intent, Manifest } from "./manifest";
+import type { Graft, GraftFile, Intent, Manifest, PendingReconciliation } from "./manifest";
 import { managedFilePath, projectPath } from "./workspace";
 
 export type FileStatus =
@@ -7,44 +7,45 @@ export type FileStatus =
   | "modified+intent"
   | "modified-unrecorded"
   | "missing"
-  | "conflict-unresolved";
+  | "conflict-unresolved"
+  | "reconciliation-pending";
 
 export interface ClassifyInput {
-  /** sha256 regraft last wrote for this file. */
-  storedHash: string;
-  /** sha256 of the file currently on disk, or null if missing. */
+  upstreamHash: string | null;
+  localHash: string | null;
   diskHash: string | null;
-  /** Is this file listed in the source's unresolved conflicts? */
-  unresolved: boolean;
-  /** All intent-snapshot hashes recorded for this file. */
-  intentHashes: ReadonlySet<string>;
+  pending: PendingReconciliation | null;
+  intentIds: readonly string[];
+  needsIntent: boolean;
 }
 
-/**
- * The deterministic three-hash classification:
- * unresolved wins, then missing, then stored-vs-disk, then intent coverage.
- */
 export function classifyFile(input: ClassifyInput): FileStatus {
-  if (input.unresolved) return "conflict-unresolved";
-  if (input.diskHash === null) return "missing";
-  if (input.diskHash === input.storedHash) return "clean";
-  if (input.intentHashes.has(input.diskHash)) return "modified+intent";
-  return "modified-unrecorded";
+  if (input.pending?.kind === "content-conflict" || input.pending?.kind === "legacy-conflict") {
+    return "conflict-unresolved";
+  }
+  if (input.pending) return "reconciliation-pending";
+  if (input.diskHash !== input.localHash) {
+    return input.diskHash === null && input.localHash !== null ? "missing" : "modified-unrecorded";
+  }
+  if (input.diskHash === input.upstreamHash) return "clean";
+  if (input.needsIntent || input.intentIds.length === 0) return "modified-unrecorded";
+  return "modified+intent";
 }
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
-/** Build a lookup: project-relative path -> set of intent-snapshot hashes. */
+/** Compatibility helper used by renderers and tests: path -> all historical hashes. */
 export function intentHashesByPath(intents: readonly Intent[]): Map<string, Set<string>> {
   const map = new Map<string, Set<string>>();
   for (const intent of intents) {
-    for (const [path, hash] of Object.entries(intent.files)) {
-      let set = map.get(path);
+    for (const target of intent.targets) {
+      if (target.hash === null) continue;
+      let set = map.get(target.path);
       if (!set) {
         set = new Set();
-        map.set(path, set);
+        map.set(target.path, set);
       }
-      set.add(hash);
+      set.add(target.hash);
     }
   }
   return map;
@@ -54,22 +55,30 @@ export function intentHashesFor(map: ReadonlyMap<string, Set<string>>, path: str
   return map.get(path) ?? EMPTY_SET;
 }
 
-/**
- * Project-relative paths of tracked files whose disk content differs from the
- * stored hash and is not covered by any intent snapshot at its current hash.
- * Unresolved conflicts and missing files are excluded. Sorted.
- */
-export function findUnrecordedModifications(root: string, manifest: Manifest): string[] {
-  const intentHashes = intentHashesByPath(manifest.intents);
+export function classifyGraftFile(root: string, graft: Graft, rel: string, file: GraftFile): FileStatus {
+  const path = projectPath(graft.dest, rel);
+  return classifyFile({
+    upstreamHash: file.upstreamHash,
+    localHash: file.localHash,
+    diskHash: hashFileIfExists(managedFilePath(root, path)),
+    pending: file.pending,
+    intentIds: file.intentIds,
+    needsIntent: file.needsIntent,
+  });
+}
+
+/** Project-relative tracked files with current local state lacking Intent. */
+export function findUnrecordedModifications(
+  root: string,
+  manifest: Manifest,
+  selectedGrafts: readonly Graft[] = manifest.grafts,
+): string[] {
   const result: string[] = [];
-  for (const source of manifest.sources) {
-    for (const [rel, storedHash] of Object.entries(source.files)) {
-      if (source.unresolved.includes(rel)) continue;
-      const proj = projectPath(source.dest, rel);
-      const diskHash = hashFileIfExists(managedFilePath(root, proj));
-      if (diskHash === null || diskHash === storedHash) continue;
-      if (intentHashes.get(proj)?.has(diskHash)) continue;
-      result.push(proj);
+  for (const graft of selectedGrafts) {
+    for (const [rel, file] of Object.entries(graft.files)) {
+      if (classifyGraftFile(root, graft, rel, file) === "modified-unrecorded") {
+        result.push(projectPath(graft.dest, rel));
+      }
     }
   }
   return result.sort();

@@ -1,7 +1,7 @@
 {
   "name": "regraft",
-  "version": "0.1.3",
-  "description": "Copy code from any git repo, change it for your project, and keep pulling upstream updates later.",
+  "version": "0.1.4",
+  "description": "Keep copied code up to date.",
   "type": "module",
   "repository": {
     "type": "git",
@@ -13,7 +13,12 @@
     "regraft": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills",
+    "docs",
+    "schemas",
+    "examples/session-graft",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"
@@ -23,6 +28,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "prepack": "pnpm build",
     "build:binary": "bash scripts/build-release.sh"
   },
   "pnpm": {
@@ -32,6 +38,7 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -35,7 +35,7 @@ describe("regraft resolve", () => {
     expect(result.exitCode).toBe(1);
     expect(result.markersRemain).toEqual(["vendor/file.txt"]);
     expect(result.resolved).toEqual([]);
-    expect(loadManifest(project)!.sources[0]!.unresolved).toEqual(["file.txt"]);
+    expect(loadManifest(project)!.grafts[0]!.files["file.txt"]!.pending?.kind).toBe("content-conflict");
   });
 
   it("happy path with --note: clears unresolved, updates stored hash, records intent", () => {
@@ -49,8 +49,8 @@ describe("regraft resolve", () => {
     expect(result.note).not.toBeNull();
 
     const manifest = loadManifest(project)!;
-    expect(manifest.sources[0]!.unresolved).toEqual([]);
-    expect(manifest.sources[0]!.files["file.txt"]).toBe(sha256(RECONCILED));
+    expect(manifest.grafts[0]!.files["file.txt"]!.pending).toBeNull();
+    expect(manifest.grafts[0]!.files["file.txt"]!.localHash).toBe(sha256(RECONCILED));
     expect(manifest.intents.at(-1)!.description).toContain("Re-applied");
     expect(readFileSync(join(project, "PATCH.md"), "utf8")).toContain("Re-applied line-two customization");
 
@@ -68,11 +68,11 @@ describe("regraft resolve", () => {
     expect(result.needsNote).toEqual(["vendor/file.txt"]);
     expect(result.note).toBeNull();
     // state was still updated
-    expect(loadManifest(project)!.sources[0]!.unresolved).toEqual([]);
+    expect(loadManifest(project)!.grafts[0]!.files["file.txt"]!.pending).toBeNull();
 
     // the suggested follow-up works and covers the file
     noteCommand("Resolution rationale", { cwd: project, files: ["vendor/file.txt"] });
-    expect(loadManifest(project)!.intents.at(-1)!.files["vendor/file.txt"]).toBe(sha256(RECONCILED));
+    expect(loadManifest(project)!.intents.at(-1)!.targets[0]!.hash).toBe(sha256(RECONCILED));
   });
 
   it("exits 0 when the resolved content is already covered by an intent snapshot", () => {
@@ -98,7 +98,7 @@ describe("regraft resolve", () => {
     const up = initUpstream({ "lib/a.txt": "a\n" });
     const project = makeProject();
     addCommand(`${up.url}#main:lib`, "vendor", { cwd: project });
-    expect(() => resolveCommand({ cwd: project, files: ["vendor/a.txt"] })).toThrow(/not marked unresolved/);
+    expect(() => resolveCommand({ cwd: project, files: ["vendor/a.txt"] })).toThrow(/no pending judgment/);
   });
 
   it("returns a stable --json shape", () => {

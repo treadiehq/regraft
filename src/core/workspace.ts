@@ -1,4 +1,14 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 export const WORKDIR_NAME = ".regraft";
@@ -36,6 +46,28 @@ export function cacheRoot(root: string): string {
 export function briefsDir(root: string): string {
   ensureWorkdir(root);
   return managedFilePath(root, `${WORKDIR_NAME}/briefs`);
+}
+
+/** Serialize state-changing Regraft operations within one project. */
+export function withWorkspaceLock<T>(root: string, operation: () => T): T {
+  ensureWorkdir(root);
+  const lock = managedFilePath(root, `${WORKDIR_NAME}/operation.lock`);
+  try {
+    mkdirSync(lock);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(
+        "Another Regraft operation is already changing this project. " +
+          "Wait for it to finish; remove .regraft/operation.lock only if the prior process crashed.",
+      );
+    }
+    throw error;
+  }
+  try {
+    return operation();
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -123,6 +155,20 @@ export function writeFileEnsuringDir(root: string, projectRelativePath: string, 
   // is covered before the write.
   absPath = managedFilePath(root, projectRelativePath);
   writeFileSync(absPath, data);
+}
+
+/** Atomically replace a managed file with a same-directory temporary file. */
+export function writeFileAtomic(root: string, projectRelativePath: string, data: Buffer | string): void {
+  const target = managedFilePath(root, projectRelativePath);
+  mkdirSync(dirname(target), { recursive: true });
+  const temporaryPath = `${projectRelativePath}.tmp-${process.pid}-${Date.now().toString(36)}`;
+  const temporary = managedFilePath(root, temporaryPath);
+  try {
+    writeFileSync(temporary, data);
+    renameSync(temporary, target);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 /** Remove now-empty directories, walking up from startRelDir toward root. */

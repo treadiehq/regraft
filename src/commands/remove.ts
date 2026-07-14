@@ -1,8 +1,14 @@
-import { existsSync, rmSync } from "node:fs";
-import { dirname } from "node:path";
-import { requireManifest, saveManifest } from "../core/manifest";
-import { writePatchMd } from "../core/patchmd";
-import { findRoot, managedFilePath, normalizeUserPath, projectPath, pruneEmptyDirs } from "../core/workspace";
+import { existsSync } from "node:fs";
+import { MutationJournal } from "../core/journal";
+import { MANIFEST_FILE, requireManifest, saveManifest } from "../core/manifest";
+import { PATCH_MD_FILE, writePatchMd } from "../core/patchmd";
+import {
+  findRoot,
+  managedFilePath,
+  normalizeUserPath,
+  projectPath,
+  withWorkspaceLock,
+} from "../core/workspace";
 
 export interface RemoveOptions {
   cwd: string;
@@ -14,6 +20,8 @@ export interface RemoveResult {
   exitCode: 0;
   hard: boolean;
   removed: {
+    id: string;
+    name: string;
     url: string;
     remoteRef: string;
     path: string;
@@ -25,18 +33,34 @@ export interface RemoveResult {
 
 export function removeCommand(query: string, opts: RemoveOptions): RemoveResult {
   const root = findRoot(opts.cwd);
+  return withWorkspaceLock(root, () => {
+    const journal = new MutationJournal(root);
+    try {
+      return removeCommandUnlocked(query, opts, journal);
+    } catch (error) {
+      journal.rollback();
+      throw error;
+    }
+  });
+}
+
+function removeCommandUnlocked(query: string, opts: RemoveOptions, journal: MutationJournal): RemoveResult {
+  const root = findRoot(opts.cwd);
   const manifest = requireManifest(root);
 
   const describe = (s: { url: string; path: string; dest: string }): string =>
     `  ${s.url}${s.path ? `#${s.path}` : ""} → ${s.dest}`;
 
   const destQuery = normalizeUserPath(query);
-  const matches = manifest.sources.filter(
-    (s) => s.url.includes(query) || (destQuery !== "" && s.dest.includes(destQuery)),
-  );
+  const exact = manifest.grafts.find((graft) => graft.id === query || graft.name === query);
+  const matches = exact
+    ? [exact]
+    : manifest.grafts.filter(
+        (graft) => graft.url.includes(query) || (destQuery !== "" && graft.dest.includes(destQuery)),
+      );
   if (matches.length === 0) {
-    const list = manifest.sources.map(describe).join("\n") || "  (none)";
-    throw new Error(`No tracked source URL or dest contains "${query}". Tracked sources:\n${list}`);
+    const list = manifest.grafts.map(describe).join("\n") || "  (none)";
+    throw new Error(`No Graft name, ID, Source URL, or destination matches "${query}". Known Grafts:\n${list}`);
   }
   if (matches.length > 1) {
     throw new Error(`"${query}" matches ${matches.length} sources; be more specific:\n${matches.map(describe).join("\n")}`);
@@ -49,15 +73,22 @@ export function removeCommand(query: string, opts: RemoveOptions): RemoveResult 
       const proj = projectPath(source.dest, rel);
       const abs = managedFilePath(root, proj);
       if (existsSync(abs)) {
-        rmSync(abs);
+        journal.remove(proj);
         deletedFiles.push(proj);
-        pruneEmptyDirs(root, dirname(proj));
       }
     }
-    pruneEmptyDirs(root, source.dest);
   }
 
-  manifest.sources = manifest.sources.filter((s) => s !== source);
+  for (const intent of manifest.intents) {
+    intent.targets = intent.targets.map((target) =>
+      target.kind === "graft-file" && target.graftId === source.id
+        ? { kind: "legacy-orphan" as const, path: target.path, hash: target.hash }
+        : target,
+    );
+  }
+  manifest.grafts = manifest.grafts.filter((graft) => graft !== source);
+  journal.capture(MANIFEST_FILE);
+  journal.capture(PATCH_MD_FILE);
   saveManifest(root, manifest);
   // Intents are kept as history; regeneration marks newly orphaned ones.
   writePatchMd(root, manifest);
@@ -66,7 +97,14 @@ export function removeCommand(query: string, opts: RemoveOptions): RemoveResult 
     command: "remove",
     exitCode: 0,
     hard: opts.hard ?? false,
-    removed: { url: source.url, remoteRef: source.remoteRef, path: source.path, dest: source.dest },
+    removed: {
+      id: source.id,
+      name: source.name,
+      url: source.url,
+      remoteRef: source.remoteRef,
+      path: source.path,
+      dest: source.dest,
+    },
     deletedFiles,
   };
 }

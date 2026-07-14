@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://useregraft.com/schemas/regraft-yaml.v1.schema.json",
+  "title": "Regraft publishable Graft manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "grafts"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "grafts": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+        "maxLength": 63
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "description"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Canonical repository-relative POSIX path; use . for repository root.",
+            "pattern": "^(?:\\.|(?!/)(?!.*(?:^|/)\\.\\.?(/|$))(?!.*//)(?!.*\\\\)(?!.*\\/$).+)$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "pattern": "^[^\\r\\n]+$"
+          }
+        }
+      }
+    }
+  }
+}

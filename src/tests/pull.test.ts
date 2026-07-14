@@ -37,9 +37,10 @@ describe("regraft pull", () => {
     expect(result.sources[0]!.fastForwarded).toEqual(["vendor/file.txt"]);
     expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe(BASE + "line9\n");
 
-    const source = loadManifest(project)!.sources[0]!;
+    const source = loadManifest(project)!.grafts[0]!;
     expect(source.pinnedSha).toBe(v2);
-    expect(source.files["file.txt"]).toBe(sha256(BASE + "line9\n"));
+    expect(source.files["file.txt"]!.upstreamHash).toBe(sha256(BASE + "line9\n"));
+    expect(source.files["file.txt"]!.localHash).toBe(sha256(BASE + "line9\n"));
   });
 
   it("leaves locally modified files alone when upstream did not touch them", () => {
@@ -52,7 +53,7 @@ describe("regraft pull", () => {
     expect(result.sources[0]!.fastForwarded).toEqual(["vendor/other.txt"]);
     expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe("totally mine now\n");
     // stored hash for the modified file stays at what regraft last wrote
-    expect(loadManifest(project)!.sources[0]!.files["file.txt"]).toBe(sha256(BASE));
+    expect(loadManifest(project)!.grafts[0]!.files["file.txt"]!.upstreamHash).toBe(sha256(BASE));
   });
 
   it("three-way merges non-overlapping local and upstream edits cleanly", () => {
@@ -67,7 +68,9 @@ describe("regraft pull", () => {
     expect(merged).toContain("LOCAL line1");
     expect(merged).toContain("UPSTREAM line8");
     expect(merged).not.toContain("<<<<<<<");
-    expect(loadManifest(project)!.sources[0]!.files["file.txt"]).toBe(sha256(merged));
+    const file = loadManifest(project)!.grafts[0]!.files["file.txt"]!;
+    expect(file.upstreamHash).toBe(sha256(BASE.replace("line8", "UPSTREAM line8")));
+    expect(file.localHash).toBe(sha256(merged));
   });
 
   it("writes inline diff3 markers on true conflicts and generates a brief", () => {
@@ -89,8 +92,8 @@ describe("regraft pull", () => {
     expect(text).toContain("UPSTREAM line4");
     expect(text.startsWith("line1\n")).toBe(true); // markers inline, not prepended
 
-    const source = loadManifest(project)!.sources[0]!;
-    expect(source.unresolved).toEqual(["file.txt"]);
+    const source = loadManifest(project)!.grafts[0]!;
+    expect(source.files["file.txt"]!.pending?.kind).toBe("content-conflict");
     expect(source.pinnedSha).toBe(v2); // pinned SHA still advances
 
     expect(result.brief).toMatch(/^\.regraft\/briefs\/.*\.md$/);
@@ -101,7 +104,7 @@ describe("regraft pull", () => {
     expect(brief).toContain("regraft resolve"); // agent instructions
   });
 
-  it("skips unresolved files on subsequent pulls (no marker stacking)", () => {
+  it("replays pending conflicts before contacting a newer upstream (no marker stacking)", () => {
     const { up, project } = setup();
     writeFiles(project, { "vendor/file.txt": BASE.replace("line4", "LOCAL line4") });
     commitUpstream(up, { "lib/file.txt": BASE.replace("line4", "UPSTREAM line4") });
@@ -110,21 +113,21 @@ describe("regraft pull", () => {
 
     commitUpstream(up, { "lib/file.txt": BASE.replace("line4", "UPSTREAM AGAIN line4") });
     const second = pullCommand({ cwd: project });
-    expect(second.sources[0]!.conflicts).toEqual([]);
+    expect(second.sources[0]!.conflicts).toEqual(["vendor/file.txt"]);
     expect(second.sources[0]!.skipped[0]).toMatchObject({ path: "vendor/file.txt" });
     expect(second.sources[0]!.skipped[0]!.reason).toContain("resolve");
-    expect(second.sources[0]!.warnings[0]).toMatchObject({ path: "vendor/file.txt" });
-    expect(second.sources[0]!.warnings[0]!.message).toContain("upstream changed");
+    expect(second.sources[0]!.warnings).toEqual([]);
     // untouched: same single set of markers
     expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe(conflicted);
     expect((conflicted.match(/<<<<<<</g) ?? []).length).toBe(1);
   });
 
-  it("warns when upstream deletes an unresolved file on a later pull", () => {
+  it("requires resolving the current Update before observing a later upstream deletion", () => {
     const { up, project } = setup();
     writeFiles(project, { "vendor/file.txt": BASE.replace("line4", "LOCAL line4") });
     commitUpstream(up, { "lib/file.txt": BASE.replace("line4", "UPSTREAM line4") });
-    pullCommand({ cwd: project });
+    const first = pullCommand({ cwd: project });
+    const pendingSha = loadManifest(project)!.grafts[0]!.pinnedSha;
     const conflicted = readFileSync(join(project, "vendor/file.txt"), "utf8");
 
     const v3 = commitUpstream(up, {}, { remove: ["lib/file.txt"], message: "delete conflicted file" });
@@ -132,14 +135,15 @@ describe("regraft pull", () => {
 
     expect(second.exitCode).toBe(1);
     expect(second.sources[0]!.skipped[0]).toMatchObject({ path: "vendor/file.txt" });
-    expect(second.sources[0]!.warnings[0]).toMatchObject({ path: "vendor/file.txt" });
-    expect(second.sources[0]!.warnings[0]!.message).toContain("deleted");
+    expect(second.sources[0]!.conflicts).toEqual(["vendor/file.txt"]);
+    expect(second.sources[0]!.warnings).toEqual([]);
     expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe(conflicted);
-    expect(loadManifest(project)!.sources[0]!.pinnedSha).toBe(v3);
-    expect(second.brief).not.toBeNull();
+    expect(loadManifest(project)!.grafts[0]!.pinnedSha).toBe(pendingSha);
+    expect(loadManifest(project)!.grafts[0]!.pinnedSha).not.toBe(v3);
+    expect(second.brief).toBe(first.brief);
     const brief = readFileSync(join(project, second.brief!), "utf8");
     expect(brief).toContain("vendor/file.txt");
-    expect(brief).toContain("delete conflicted file");
+    expect(brief).not.toContain("delete conflicted file");
   });
 
   it("adds new upstream files and deletes upstream-deleted unmodified files", () => {
@@ -153,7 +157,7 @@ describe("regraft pull", () => {
     expect(readFileSync(join(project, "vendor/new.txt"), "utf8")).toBe("new file\n");
     expect(existsSync(join(project, "vendor/old.txt"))).toBe(false);
 
-    const source = loadManifest(project)!.sources[0]!;
+    const source = loadManifest(project)!.grafts[0]!;
     expect(Object.keys(source.files).sort()).toEqual(["keep.txt", "new.txt"]);
   });
 
@@ -182,6 +186,20 @@ describe("regraft pull", () => {
     expect(() => pullCommand({ cwd: project })).toThrow(/symbolic link/);
     expect(readFileSync(join(project, "precious.txt"), "utf8")).toBe("keep me\n");
     expect(lstatSync(tracked).isSymbolicLink()).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")("rolls back earlier file writes when a later path fails", () => {
+    const { up, project } = setup({ "lib/a.txt": "a v1\n", "lib/z.txt": "z v1\n" });
+    const pinnedBefore = loadManifest(project)!.grafts[0]!.pinnedSha;
+    rmSync(join(project, "vendor/z.txt"));
+    writeFiles(project, { "precious.txt": "keep me\n" });
+    symlinkSync("../precious.txt", join(project, "vendor/z.txt"));
+    commitUpstream(up, { "lib/a.txt": "a v2\n", "lib/z.txt": "z v2\n" });
+
+    expect(() => pullCommand({ cwd: project })).toThrow(/symbolic link/);
+    expect(readFileSync(join(project, "vendor/a.txt"), "utf8")).toBe("a v1\n");
+    expect(readFileSync(join(project, "precious.txt"), "utf8")).toBe("keep me\n");
+    expect(loadManifest(project)!.grafts[0]!.pinnedSha).toBe(pinnedBefore);
   });
 
   it("never merges binaries: conflicting binary changes are skipped with a warning", () => {
@@ -221,7 +239,7 @@ describe("regraft pull", () => {
     expect(result.exitCode).toBe(0);
     expect(result.sources[0]!.forced).toEqual(["vendor/file.txt"]);
     expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe(upstreamContent);
-    expect(loadManifest(project)!.sources[0]!.unresolved).toEqual([]);
+    expect(loadManifest(project)!.grafts[0]!.files["file.txt"]!.pending).toBeNull();
   });
 
   it("--dry-run reports the plan but writes nothing", () => {
@@ -229,7 +247,7 @@ describe("regraft pull", () => {
     writeFiles(project, { "vendor/file.txt": BASE.replace("line4", "LOCAL line4") });
     commitUpstream(up, { "lib/file.txt": BASE.replace("line4", "UPSTREAM line4") });
     const before = readFileSync(join(project, "vendor/file.txt"), "utf8");
-    const pinnedBefore = loadManifest(project)!.sources[0]!.pinnedSha;
+    const pinnedBefore = loadManifest(project)!.grafts[0]!.pinnedSha;
 
     const result = pullCommand({ cwd: project, dryRun: true });
     expect(result.dryRun).toBe(true);
@@ -237,8 +255,8 @@ describe("regraft pull", () => {
     expect(result.brief).toBeNull();
     expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe(before);
     const manifest = loadManifest(project)!;
-    expect(manifest.sources[0]!.pinnedSha).toBe(pinnedBefore);
-    expect(manifest.sources[0]!.unresolved).toEqual([]);
+    expect(manifest.grafts[0]!.pinnedSha).toBe(pinnedBefore);
+    expect(Object.values(manifest.grafts[0]!.files).every((entry) => entry.pending === null)).toBe(true);
     expect(existsSync(join(project, ".regraft/briefs"))).toBe(false);
   });
 
@@ -271,7 +289,7 @@ describe("regraft pull", () => {
       ["brief", "command", "conflicts", "dryRun", "exitCode", "sources", "unrecordedModifications"].sort(),
     );
     expect(Object.keys(result.sources[0]!).sort()).toEqual(
-      ["added", "conflicts", "deleted", "dest", "fastForwarded", "forced", "merged", "newSha", "oldSha", "remoteRef", "skipped", "upToDate", "url", "warnings"].sort(),
+      ["added", "conflicts", "deleted", "dest", "fastForwarded", "forced", "id", "merged", "name", "newSha", "oldSha", "path", "remoteRef", "skipped", "upToDate", "url", "warnings"].sort(),
     );
   });
 });

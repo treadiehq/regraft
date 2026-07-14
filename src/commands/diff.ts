@@ -8,6 +8,7 @@ import {
   readFileAt,
   resolveRemote,
 } from "../core/git";
+import { resolveGrafts } from "../core/grafts";
 import { isBinary, readFileIfExists, sha256 } from "../core/hash";
 import { requireManifest, type Source } from "../core/manifest";
 import { cacheRoot, findRoot, managedFilePath, normalizeUserPath, projectPath, upstreamPath } from "../core/workspace";
@@ -18,6 +19,8 @@ export interface DiffOptions {
   files?: string[];
   /** Show what changed upstream since the pinned SHA instead of local drift. */
   upstream?: boolean;
+  /** Exact Graft names or IDs to scope to. */
+  grafts?: string[];
 }
 
 export interface DiffFileEntry {
@@ -30,6 +33,8 @@ export interface DiffFileEntry {
 }
 
 export interface DiffSourceResult {
+  id: string;
+  name: string;
   url: string;
   remoteRef: string;
   path: string;
@@ -52,23 +57,24 @@ export function diffCommand(opts: DiffOptions): DiffResult {
   ensureGitAvailable();
   const root = findRoot(opts.cwd);
   const manifest = requireManifest(root);
+  const selected = resolveGrafts(manifest, opts.grafts);
 
   let filter: Set<string> | null = null;
   if (opts.files && opts.files.length > 0) {
     filter = new Set(opts.files.map(normalizeUserPath));
     const tracked = new Set(
-      manifest.sources.flatMap((s) => Object.keys(s.files).map((rel) => projectPath(s.dest, rel))),
+      selected.flatMap((graft) => Object.keys(graft.files).map((rel) => projectPath(graft.dest, rel))),
     );
     for (const f of filter) {
       if (!tracked.has(f)) {
-        const dests = manifest.sources.map((s) => s.dest).join(", ") || "(none)";
+        const dests = selected.map((graft) => graft.dest).join(", ") || "(none)";
         throw new Error(`"${f}" is not a tracked file. Tracked files live under: ${dests}`);
       }
     }
   }
 
   const sources: DiffSourceResult[] = [];
-  for (const source of manifest.sources) {
+  for (const source of selected) {
     sources.push(opts.upstream ? diffUpstream(root, source, filter) : diffLocal(root, source, filter));
   }
 
@@ -79,6 +85,8 @@ export function diffCommand(opts: DiffOptions): DiffResult {
 /** Local drift: disk content vs the baseline regraft last wrote. */
 function diffLocal(root: string, source: Source, filter: Set<string> | null): DiffSourceResult {
   const result: DiffSourceResult = {
+    id: source.id,
+    name: source.name,
     url: source.url,
     remoteRef: source.remoteRef,
     path: source.path,
@@ -88,22 +96,17 @@ function diffLocal(root: string, source: Source, filter: Set<string> | null): Di
     files: [],
   };
 
-  let cache: string | null = null;
+  const cache = ensureCacheRepo(cacheRoot(root), source.url);
+  ensureCommit(cache, source.url, source.pinnedSha, source.remoteRef);
   const rels = Object.keys(source.files).sort();
   for (const rel of rels) {
     const proj = projectPath(source.dest, rel);
     if (filter && !filter.has(proj)) continue;
-    const stored = source.files[rel] as string;
+    const state = source.files[rel]!;
     const diskBuf = readFileIfExists(managedFilePath(root, proj));
     if (diskBuf === null) {
       result.files.push({ path: proj, change: "missing", binary: false, diff: "", note: "file is missing from disk" });
       continue;
-    }
-    if (sha256(diskBuf) === stored) continue;
-
-    if (cache === null) {
-      cache = ensureCacheRepo(cacheRoot(root), source.url);
-      ensureCommit(cache, source.url, source.pinnedSha, source.remoteRef);
     }
     let baseBuf: Buffer | null;
     try {
@@ -111,10 +114,9 @@ function diffLocal(root: string, source: Source, filter: Set<string> | null): Di
     } catch {
       baseBuf = null;
     }
+    if (baseBuf !== null && sha256(diskBuf) === sha256(baseBuf)) continue;
 
-    const unresolvedNote = source.unresolved.includes(rel)
-      ? "has unresolved conflict markers from a pull"
-      : null;
+    const unresolvedNote = state.pending ? `has pending ${state.pending.kind} judgment` : null;
 
     if (baseBuf === null) {
       const binary = isBinary(diskBuf);
@@ -135,16 +137,12 @@ function diffLocal(root: string, source: Source, filter: Set<string> | null): Di
       result.files.push({ path: proj, change: "modified", binary: true, diff: "", note: joinNotes("binary file; no text diff", unresolvedNote) });
       continue;
     }
-    const baselineNote =
-      sha256(baseBuf) === stored
-        ? null
-        : "baseline is the pinned upstream content; this diff includes earlier fixed local changes";
     result.files.push({
       path: proj,
       change: "modified",
       binary: false,
       diff: unifiedDiff(proj, baseBuf, diskBuf),
-      note: joinNotes(baselineNote, unresolvedNote),
+      note: unresolvedNote,
     });
   }
   return result;
@@ -157,6 +155,8 @@ function diffUpstream(root: string, source: Source, filter: Set<string> | null):
   const newSha = ensureHead(cache, source.url, head);
 
   const result: DiffSourceResult = {
+    id: source.id,
+    name: source.name,
     url: source.url,
     remoteRef: source.remoteRef,
     path: source.path,

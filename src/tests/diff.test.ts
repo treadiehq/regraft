@@ -161,7 +161,7 @@ describe("regraft diff --upstream", () => {
     const result = diffCommand({ cwd: project });
     expect(Object.keys(result).sort()).toEqual(["command", "exitCode", "sources", "upstream"].sort());
     expect(Object.keys(result.sources[0]!).sort()).toEqual(
-      ["dest", "files", "path", "pinnedSha", "remoteRef", "upstreamSha", "url"].sort(),
+      ["dest", "files", "id", "name", "path", "pinnedSha", "remoteRef", "upstreamSha", "url"].sort(),
     );
     expect(Object.keys(result.sources[0]!.files[0]!).sort()).toEqual(
       ["binary", "change", "diff", "note", "path"].sort(),

@@ -1,0 +1,5 @@
+version: 1
+grafts:
+  session:
+    path: packages/auth/src/session
+    description: Session storage and trusted-device policy

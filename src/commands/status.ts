@@ -1,13 +1,14 @@
-import { classifyFile, intentHashesByPath, intentHashesFor, type FileStatus } from "../core/classify";
+import { classifyGraftFile, type FileStatus } from "../core/classify";
 import { ensureGitAvailable, resolveRemote } from "../core/git";
-import { hashFileIfExists } from "../core/hash";
+import { resolveGrafts } from "../core/grafts";
 import { requireManifest } from "../core/manifest";
-import { findRoot, managedFilePath, projectPath } from "../core/workspace";
+import { findRoot, projectPath } from "../core/workspace";
 
 export interface StatusOptions {
   cwd: string;
   /** Skip upstream checks entirely (no network); classify local state only. */
   offline?: boolean;
+  grafts?: string[];
 }
 
 export interface StatusFile {
@@ -16,6 +17,8 @@ export interface StatusFile {
 }
 
 export interface StatusSource {
+  id: string;
+  name: string;
   url: string;
   remoteRef: string;
   path: string;
@@ -42,21 +45,26 @@ export interface StatusResult {
   sources: StatusSource[];
 }
 
-const FAILING: ReadonlySet<FileStatus> = new Set(["modified-unrecorded", "missing", "conflict-unresolved"]);
+const FAILING: ReadonlySet<FileStatus> = new Set([
+  "modified-unrecorded",
+  "missing",
+  "conflict-unresolved",
+  "reconciliation-pending",
+]);
 
 export function statusCommand(opts: StatusOptions): StatusResult {
   const offline = opts.offline ?? false;
   if (!offline) ensureGitAvailable();
   const root = findRoot(opts.cwd);
   const manifest = requireManifest(root);
-  const intentHashes = intentHashesByPath(manifest.intents);
+  const selected = resolveGrafts(manifest, opts.grafts);
 
   const sources: StatusSource[] = [];
   let stale = false;
   let drifted = false;
   let failing = false;
 
-  for (const source of manifest.sources) {
+  for (const source of selected) {
     let upstreamSha: string | null = null;
     let sourceStale: boolean | null = null;
     if (!offline) {
@@ -67,20 +75,17 @@ export function statusCommand(opts: StatusOptions): StatusResult {
     }
 
     const files: StatusFile[] = [];
-    for (const [rel, storedHash] of Object.entries(source.files).sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [rel, file] of Object.entries(source.files).sort(([a], [b]) => a.localeCompare(b))) {
       const proj = projectPath(source.dest, rel);
-      const status = classifyFile({
-        storedHash,
-        diskHash: hashFileIfExists(managedFilePath(root, proj)),
-        unresolved: source.unresolved.includes(rel),
-        intentHashes: intentHashesFor(intentHashes, proj),
-      });
+      const status = classifyGraftFile(root, source, rel, file);
       if (status !== "clean") drifted = true;
       if (FAILING.has(status)) failing = true;
       files.push({ path: proj, status });
     }
 
     sources.push({
+      id: source.id,
+      name: source.name,
       url: source.url,
       remoteRef: source.remoteRef,
       path: source.path,

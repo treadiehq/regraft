@@ -2,7 +2,19 @@ import { describe, expect, it } from "vitest";
 import { completionCommand } from "../commands/completion";
 import { COMPLETION_SHELLS, completionScript } from "../core/completion";
 
-const ALL_COMMANDS = ["add", "diff", "note", "status", "pull", "resolve", "remove", "update", "completion"];
+const ALL_COMMANDS = [
+  "add",
+  "diff",
+  "note",
+  "status",
+  "pull",
+  "resolve",
+  "inspect",
+  "remove",
+  "validate",
+  "update",
+  "completion",
+];
 
 describe("regraft completion", () => {
   it.each(COMPLETION_SHELLS)("generates a %s script covering every command", (shell) => {
@@ -16,6 +28,8 @@ describe("regraft completion", () => {
     expect(completionScript("bash")).toContain("--offline");
     expect(completionScript("zsh")).toContain("--dry-run");
     expect(completionScript("fish")).toContain("-l hard");
+    expect(completionScript("bash")).toContain("--name");
+    expect(completionScript("zsh")).toContain("--graft");
   });
 
   it("includes completion command flags alongside shell choices", () => {

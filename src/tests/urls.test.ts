@@ -13,6 +13,7 @@ describe("parseSourceArg", () => {
     expect(parseSourceArg("acme/widgets#dev")).toEqual({
       url: "https://github.com/acme/widgets.git",
       ref: "dev",
+      graftCandidate: "dev",
       path: "",
     });
   });
@@ -68,6 +69,7 @@ describe("parseSourceArg", () => {
     expect(parseSourceArg("https://git.example.com/team/repo.git#release")).toEqual({
       url: "https://git.example.com/team/repo.git",
       ref: "release",
+      graftCandidate: "release",
       path: "",
     });
   });

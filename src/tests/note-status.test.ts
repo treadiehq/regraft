@@ -1,4 +1,4 @@
-import { rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { addCommand } from "../commands/add";
@@ -7,7 +7,6 @@ import { statusCommand } from "../commands/status";
 import { loadManifest } from "../core/manifest";
 import { sha256 } from "../core/hash";
 import { cleanupTempDirs, commitUpstream, initUpstream, makeProject, writeFiles, type Upstream } from "./helpers";
-import { readFileSync } from "node:fs";
 
 afterAll(cleanupTempDirs);
 
@@ -83,7 +82,7 @@ describe("regraft status", () => {
       ["clean", "command", "drifted", "exitCode", "offline", "sources", "stale"].sort(),
     );
     expect(Object.keys(result.sources[0]!).sort()).toEqual(
-      ["dest", "files", "path", "pinnedSha", "remoteRef", "stale", "upstreamSha", "url"].sort(),
+      ["dest", "files", "id", "name", "path", "pinnedSha", "remoteRef", "stale", "upstreamSha", "url"].sort(),
     );
     expect(Object.keys(result.sources[0]!.files[0]!).sort()).toEqual(["path", "status"].sort());
   });
@@ -117,7 +116,9 @@ describe("regraft note", () => {
     writeFiles(project, { "vendor/a.ts": "customized alpha\n" });
     const result = noteCommand("Why alpha changed", { cwd: project });
     expect(result.exitCode).toBe(0);
-    expect(result.intent.files).toEqual({ "vendor/a.ts": sha256("customized alpha\n") });
+    expect(result.intent.targets).toMatchObject([
+      { kind: "graft-file", path: "vendor/a.ts", hash: sha256("customized alpha\n") },
+    ]);
     expect(result.intent.id).toMatch(/^[0-9a-f]{8}$/);
 
     const manifest = loadManifest(project)!;
@@ -134,7 +135,7 @@ describe("regraft note", () => {
     writeFiles(project, { "vendor/b.ts": "change two\n" });
     const result = noteCommand("second", { cwd: project });
     // a.ts unchanged since the first note -> covered; only b.ts snapshotted
-    expect(Object.keys(result.intent.files)).toEqual(["vendor/b.ts"]);
+    expect(result.intent.targets.map((target) => target.path)).toEqual(["vendor/b.ts"]);
   });
 
   it("refuses when there is nothing to record", () => {
@@ -145,7 +146,22 @@ describe("regraft note", () => {
   it("accepts an explicit --files list, even for unmodified tracked files", () => {
     const { project } = setup();
     const result = noteCommand("pin b as-is", { cwd: project, files: ["./vendor/b.ts"] });
-    expect(Object.keys(result.intent.files)).toEqual(["vendor/b.ts"]);
+    expect(result.intent.targets.map((target) => target.path)).toEqual(["vendor/b.ts"]);
+  });
+
+  it("records an intentional local deletion as Intent", () => {
+    const { project } = setup();
+    rmSync(join(project, "vendor/b.ts"));
+    const result = noteCommand("Remove the optional beta surface", {
+      cwd: project,
+      files: ["vendor/b.ts"],
+    });
+    expect(result.intent.targets[0]).toMatchObject({ path: "vendor/b.ts", hash: null });
+    const status = statusCommand({ cwd: project, offline: true });
+    expect(status.exitCode).toBe(0);
+    expect(status.sources[0]!.files.find((file) => file.path === "vendor/b.ts")!.status).toBe(
+      "modified+intent",
+    );
   });
 
   it("rejects --files entries that are not tracked", () => {
@@ -157,5 +173,12 @@ describe("regraft note", () => {
   it("rejects empty descriptions", () => {
     const { project } = setup();
     expect(() => noteCommand("   ", { cwd: project })).toThrow(/must not be empty/);
+  });
+
+  it("refuses concurrent state-changing operations", () => {
+    const { project } = setup();
+    writeFiles(project, { "vendor/a.ts": "changed\n" });
+    mkdirSync(join(project, ".regraft/operation.lock"));
+    expect(() => noteCommand("Concurrent note", { cwd: project })).toThrow(/Another Regraft operation/);
   });
 });

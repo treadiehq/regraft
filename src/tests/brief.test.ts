@@ -14,17 +14,30 @@ describe("briefTimestamp", () => {
 
 describe("renderBrief", () => {
   const section = {
+    graftId: "g_0123456789abcdef",
+    graftName: "theme",
     url: "https://github.com/acme/widgets.git",
     remoteRef: "main",
     oldSha: "1".repeat(40),
     newSha: "2".repeat(40),
     conflicts: ["lib/theme.ts"],
     warnings: [{ path: "lib/logo.png", message: "binary file changed both locally and upstream" }],
+    activeIntentIds: ["aa11bb22"],
     log: "2222222 rework theming\n1111111 fix typo",
   };
   const intents: Intent[] = [
-    { id: "aa11bb22", date: "2026-06-01T00:00:00Z", description: "Brand palette replaces default tokens.", files: { "lib/theme.ts": HASH } },
-    { id: "cc33dd44", date: "2026-06-02T00:00:00Z", description: "Unrelated tweak elsewhere.", files: { "other/file.ts": HASH } },
+    {
+      id: "aa11bb22",
+      date: "2026-06-01T00:00:00Z",
+      description: "Brand palette replaces default tokens.",
+      targets: [{ kind: "legacy-orphan", path: "lib/theme.ts", hash: HASH }],
+    },
+    {
+      id: "cc33dd44",
+      date: "2026-06-02T00:00:00Z",
+      description: "Unrelated tweak elsewhere.",
+      targets: [{ kind: "legacy-orphan", path: "other/file.ts", hash: HASH }],
+    },
   ];
 
   it("lists conflicted files, warnings, and the upstream log", () => {

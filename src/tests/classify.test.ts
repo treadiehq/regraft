@@ -2,52 +2,97 @@ import { describe, expect, it } from "vitest";
 import { classifyFile, intentHashesByPath, intentHashesFor } from "../core/classify";
 import type { Intent } from "../core/manifest";
 
-const H = (c: string): string => c.repeat(64);
+const H = (character: string): string => character.repeat(64);
 
-describe("classifyFile — the three-hash classification table", () => {
-  const none = new Set<string>();
+describe("classifyFile — Graft state classification", () => {
+  const base = {
+    upstreamHash: H("a"),
+    localHash: H("a"),
+    diskHash: H("a"),
+    pending: null,
+    intentIds: [] as string[],
+    needsIntent: false,
+  };
 
-  it("disk == stored → clean", () => {
-    expect(classifyFile({ storedHash: H("a"), diskHash: H("a"), unresolved: false, intentHashes: none })).toBe("clean");
+  it("disk == local == upstream → clean", () => {
+    expect(classifyFile(base)).toBe("clean");
   });
 
-  it("disk missing → missing", () => {
-    expect(classifyFile({ storedHash: H("a"), diskHash: null, unresolved: false, intentHashes: none })).toBe("missing");
+  it("missing accepted local content → missing", () => {
+    expect(classifyFile({ ...base, diskHash: null })).toBe("missing");
   });
 
-  it("disk != stored, disk matches an intent snapshot → modified+intent", () => {
+  it("accepted local derivation with Intent → modified+intent", () => {
     expect(
-      classifyFile({ storedHash: H("a"), diskHash: H("b"), unresolved: false, intentHashes: new Set([H("b")]) }),
+      classifyFile({
+        ...base,
+        localHash: H("b"),
+        diskHash: H("b"),
+        intentIds: ["intent"],
+      }),
     ).toBe("modified+intent");
   });
 
-  it("disk != stored, no intent snapshot matches → modified-unrecorded", () => {
-    expect(
-      classifyFile({ storedHash: H("a"), diskHash: H("b"), unresolved: false, intentHashes: new Set([H("c")]) }),
-    ).toBe("modified-unrecorded");
+  it("new disk content or missing Intent → modified-unrecorded", () => {
+    expect(classifyFile({ ...base, diskHash: H("b") })).toBe("modified-unrecorded");
+    expect(classifyFile({ ...base, localHash: H("b"), diskHash: H("b") })).toBe("modified-unrecorded");
   });
 
-  it("unresolved wins over everything, even clean-looking or missing files", () => {
-    expect(classifyFile({ storedHash: H("a"), diskHash: H("a"), unresolved: true, intentHashes: none })).toBe(
-      "conflict-unresolved",
-    );
-    expect(classifyFile({ storedHash: H("a"), diskHash: null, unresolved: true, intentHashes: none })).toBe(
-      "conflict-unresolved",
-    );
+  it("pending text conflict wins over disk state", () => {
+    expect(
+      classifyFile({
+        ...base,
+        pending: {
+          kind: "content-conflict",
+          fromSha: "a".repeat(40),
+          toSha: "b".repeat(40),
+          targetKnown: true,
+          targetHash: H("c"),
+          observedLocalHash: H("b"),
+          markerHash: H("d"),
+          brief: null,
+        },
+      }),
+    ).toBe("conflict-unresolved");
   });
 
-  it("a stale intent snapshot (different hash) does not count as coverage", () => {
+  it("other pending judgment has its own status", () => {
     expect(
-      classifyFile({ storedHash: H("a"), diskHash: H("d"), unresolved: false, intentHashes: new Set([H("b")]) }),
-    ).toBe("modified-unrecorded");
+      classifyFile({
+        ...base,
+        pending: {
+          kind: "binary-conflict",
+          fromSha: "a".repeat(40),
+          toSha: "b".repeat(40),
+          targetKnown: true,
+          targetHash: H("c"),
+          observedLocalHash: H("b"),
+          markerHash: null,
+          brief: null,
+        },
+      }),
+    ).toBe("reconciliation-pending");
   });
 });
 
 describe("intentHashesByPath", () => {
-  it("collects every snapshot hash per path across intents", () => {
+  it("collects every historical snapshot hash per path", () => {
     const intents: Intent[] = [
-      { id: "one", date: "2026-01-01T00:00:00Z", description: "first", files: { "lib/a.ts": H("1") } },
-      { id: "two", date: "2026-02-01T00:00:00Z", description: "second", files: { "lib/a.ts": H("2"), "lib/b.ts": H("3") } },
+      {
+        id: "one",
+        date: "2026-01-01T00:00:00Z",
+        description: "first",
+        targets: [{ kind: "legacy-orphan", path: "lib/a.ts", hash: H("1") }],
+      },
+      {
+        id: "two",
+        date: "2026-02-01T00:00:00Z",
+        description: "second",
+        targets: [
+          { kind: "legacy-orphan", path: "lib/a.ts", hash: H("2") },
+          { kind: "legacy-orphan", path: "lib/b.ts", hash: H("3") },
+        ],
+      },
     ];
     const map = intentHashesByPath(intents);
     expect(intentHashesFor(map, "lib/a.ts")).toEqual(new Set([H("1"), H("2")]));

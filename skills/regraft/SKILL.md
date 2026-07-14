@@ -1,119 +1,144 @@
 ---
 name: regraft
-description: Work safely with copied upstream code tracked by regraft. Use when the repo contains regraft.json or PATCH.md, when modifying regraft-tracked files, pulling upstream updates, or fixing conflicts from a regraft conflict brief.
+description: Work safely with derived code managed as Regraft Grafts. Use when a repository contains regraft.json or PATCH.md, before modifying Grafted paths, when applying upstream Updates, or when resolving a Regraft Brief.
 ---
 
-# Working in a repo that uses regraft
+# Work safely with Regraft
 
-This repo copies files from upstream git repos and tracks them with `regraft`.
-`regraft.json` is the manifest, and `PATCH.md` is the note journal. regraft
-handles the mechanics: fetching, hashing, and merging. **You** handle judgment
-when merges conflict. Every command supports `--json` for machine-readable output
-and exits 0 on clean/success, 1 when something needs attention.
+Regraft tracks code derived from upstream Sources. A Graft records provenance,
+the pinned revision, accepted local adaptation, Intent, pending Updates, and
+Briefs.
 
-## Rule 1: run `regraft status` first
+Regraft performs deterministic provenance and reconciliation. The agent handles
+only explicit modifications and remaining judgment.
 
-Before touching anything, run:
+## Before modifying code
 
-```bash
-regraft status --json
-```
-
-Per file you will see one of: `clean`, `modified+intent`, `modified-unrecorded`,
-`missing`, `conflict-unresolved`. Per source, `stale: true` means upstream has new
-commits. Exit code 1 means something needs attention before or alongside your task.
-Add `--offline` to skip the upstream checks (no network; `stale` becomes `null`).
-
-## Rule 2: after modifying tracked files, ALWAYS record a note
-
-If you edit any file tracked in `regraft.json` (deliberately, as part of your
-task), record what you changed and why immediately after:
+Run the stable machine inspection surface without unexpected network access:
 
 ```bash
-regraft note "Added retry with exponential backoff to the fetch wrapper because our API rate-limits aggressively" --files lib/utils.ts
+regraft inspect --offline --json
 ```
 
-- Write the description for a future agent who must re-apply this change on top
-  of different upstream code: say what the change does and why it exists, not
-  just which lines moved.
-- Run `regraft diff` (optionally with file paths) first to see exactly what
-  changed against the copied baseline — write the note from that, not from
-  memory.
-- Without `--files`, regraft snapshots every modified tracked file not already
-  covered — fine after a focused edit, but prefer explicit `--files` when you
-  changed several things.
-- Skipping this leaves files `modified-unrecorded`, which fails `regraft status`
-  (and therefore CI).
+Identify:
 
-## Pulling upstream updates
+- which Graft owns the target path
+- Source repository, path, and pinned revision
+- active Intent that must remain true
+- `modified-unrecorded`, `missing`, or pending files
+- relevant Brief paths
+
+File statuses:
+
+- `clean`
+- `modified+intent`
+- `modified-unrecorded`
+- `missing`
+- `conflict-unresolved`
+- `reconciliation-pending`
+
+Do not infer provenance from Git history when inspection already provides it.
+
+## After deliberately modifying a Graft
+
+Inspect the actual delta:
 
 ```bash
-regraft pull --json
+regraft diff path/to/file
 ```
 
-- To preview what a pull would bring in, run `regraft diff --upstream` (full
-  per-file diffs) or `regraft pull --dry-run` (the plan).
-- Unmodified files fast-forward; modified files with non-overlapping upstream
-  changes merge silently. Only true conflicts need you.
-- On conflict, the JSON contains `"conflicts": true` and a `"brief"` path like
-  `.regraft/briefs/2026-07-02T14-22-57.230Z.md`. Files with conflicts get inline
-  diff3 markers and are listed per source under `conflicts`.
-- `--dry-run` previews without writing. `--force` discards local changes in
-  conflicting files (destructive — only when explicitly asked).
-- The JSON also lists `unrecordedModifications`: tracked files changed without a
-  note at pull time. It never affects the exit code, but record those notes
-  (`regraft note ... --files ...`) — briefs can only include recorded context.
-
-## Resolving conflicts from a brief
-
-The brief contains everything you need: the conflicted files, the full text of
-every note covering them, the upstream commit log for the range, and
-instructions. Workflow:
-
-1. Read the brief top to bottom.
-2. Open each conflicted file. Markers are diff3 style:
-   - `<<<<<<< local` … local customized version
-   - `||||||| base` … the old upstream version both sides started from
-   - `>>>>>>> upstream` … the new upstream version
-3. **Rebuild what each note says the local change must still do on top of the new
-   upstream code.** Do not blindly keep the local side: upstream may have
-   restructured.
-4. Handle warnings (binary conflicts, files deleted upstream but modified locally)
-   by deciding explicitly: keep local, take upstream, or delete.
-5. Remove ALL conflict markers.
-6. Finish with:
+Then record why the adaptation must exist:
 
 ```bash
-regraft resolve --note "Re-applied <note summary> on top of upstream's <what changed>"
+regraft note "Use tenant-prefixed Redis keys to isolate customer sessions" \
+  --files path/to/file
 ```
 
-`resolve` verifies markers are gone (it errors listing offenders otherwise) and
-records the fix note in one step. If you forgot `--note`, the resolution is still
-saved, but it exits 1 and prints the exact `regraft note ... --files ...` command
-to run — run it to finish.
+Write Intent for the future person or agent reconciling different upstream
+code. Describe the requirement and reason, not just changed lines.
 
-1. Verify with `regraft status` — the affected source's files must all be `clean`
-   or `modified+intent`.
+Verify:
 
-## Other operations
+```bash
+regraft status --offline
+```
 
-- Copy something new: `regraft add owner/repo/tree/main/src/lib vendor/lib`
-  (also accepts blob URLs for single files, full GitHub URLs, `owner/repo/pull/<n>`
-  for PR heads, and any git URL with `#ref:subpath`). Several sources can go in
-  one call (each to its default dest). Then customize, then `note`.
-- Start tracking code that was copied by hand before regraft existed:
-  `regraft add <source> <dest> --adopt`. Existing differing files are kept
-  as-is and classify as `modified-unrecorded` — immediately record why they
-  differ with `regraft note` (use `regraft diff` to see the delta).
-- Stop tracking: `regraft remove <query>` where the query is a substring of the
-  source URL or its local dest (add `--hard` to delete files). Note history is
-  kept and marked orphaned in PATCH.md.
+No deliberately changed file may remain `modified-unrecorded`.
+
+## Applying an upstream Update
+
+Only contact upstream when the task requires it:
+
+```bash
+regraft diff --upstream --graft auth
+regraft pull auth --dry-run --json
+regraft pull auth --json
+```
+
+- untouched files fast-forward
+- non-overlapping changes merge deterministically
+- local derivations and Intent survive consecutive Updates
+- conflicts, binaries, deletions, and collisions become durable pending state
+
+Never use `--force` unless the user explicitly wants to discard local behavior
+and take upstream for pending files.
+
+## Resolving a Brief
+
+1. Read the complete Brief.
+2. Inspect the Graft:
+
+   ```bash
+   regraft inspect auth --offline --json
+   ```
+
+3. Preserve the requirements stated by relevant Intent.
+4. For diff3 conflicts, use:
+   - `<<<<<<< local`: adapted local code
+   - `||||||| base`: previous pinned Source
+   - `>>>>>>> upstream`: target Source
+5. For binary, deletion, and collision Updates, choose the desired disk state
+   explicitly.
+6. Remove all conflict markers.
+7. Finish and document judgment:
+
+   ```bash
+   regraft resolve --graft auth \
+     --note "Retained Redis semantics on upstream's new session API"
+   ```
+
+8. Verify with `regraft status --offline`.
+
+Pending judgment is handled before Regraft contacts an even newer upstream
+revision. Resolve the current Update first; then pull again if needed.
+
+## Creating a Graft
+
+Direct Source:
+
+```bash
+regraft add owner/repo/tree/main/src/lib vendor/lib --name lib
+```
+
+Published Source surface:
+
+```bash
+regraft add owner/repo#graft=session src/session
+```
+
+Already copied code:
+
+```bash
+regraft add <source> <destination> --name <name> --adopt
+```
+
+Immediately record Intent for adopted differences.
 
 ## Never do
 
-- Never edit `PATCH.md` by hand — it is regenerated from `regraft.json`.
-- Never edit `regraft.json` by hand unless a command's error message tells you to.
-- Never leave a tracked file modified without a `regraft note` entry.
-- Never re-run `regraft pull` to "fix" unresolved conflicts — unresolved files are
-  skipped until you run `regraft resolve` (warnings are emitted if upstream changes
-  or deletes them in the meantime).
+- Never edit `PATCH.md` manually.
+- Never edit `regraft.json` to bypass validation.
+- Never leave deliberate adaptations without Intent.
+- Never discard pending state without explicit judgment.
+- Never ask a model to reconstruct provenance that `inspect --json` exposes.
+- Never treat `regraft update` as a Graft operation; it updates Regraft itself.

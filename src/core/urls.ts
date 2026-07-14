@@ -5,6 +5,10 @@ export interface SourceSpec {
   ref?: string;
   /** Subpath inside the repo. "" = repo root. */
   path: string;
+  /** Explicit published Graft selector (`#graft=name`). */
+  graft?: string;
+  /** Bare fragment that may be a ref or, if no such ref exists, a published Graft. */
+  graftCandidate?: string;
 }
 
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
@@ -21,10 +25,17 @@ function normalizeSubpath(p: string): string {
 /** Apply a `#ref` / `#ref:subpath` / `#:subpath` fragment to a git URL. */
 function applyFragment(url: string, frag: string): SourceSpec {
   if (!frag) return { url, path: "" };
+  if (frag.startsWith("graft=")) {
+    const graft = frag.slice("graft=".length);
+    if (!graft) throw new Error('Published Graft selector must include a name, e.g. "#graft=session".');
+    return { url, path: "", graft };
+  }
   const colon = frag.indexOf(":");
   const ref = colon === -1 ? frag : frag.slice(0, colon);
   const path = colon === -1 ? "" : normalizeSubpath(frag.slice(colon + 1));
-  return ref === "" ? { url, path } : { url, ref, path };
+  return ref === ""
+    ? { url, path }
+    : { url, ref, path, ...(colon === -1 ? { graftCandidate: ref } : {}) };
 }
 
 function splitFragment(input: string): { base: string; frag: string } {
@@ -40,6 +51,7 @@ function splitFragment(input: string): { base: string; frag: string } {
  *                          owner/repo/tree/<ref>/<path>, owner/repo/blob/<ref>/<file>
  * - PR head (a live ref):  owner/repo/pull/<number> -> tracks pull/<number>/head
  * - Full GitHub web URLs:  https://github.com/owner/repo[/tree|blob/<ref>/<path>|/pull/<number>]
+ * - Published Graft:        owner/repo#graft=<name> (or owner/repo#<name> when no matching ref exists)
  * - Any git URL + fragment: <git-url>#<ref>, <git-url>#<ref>:<subpath>, <git-url>#:<subpath>
  *   (works with https://, ssh://, file://, and scp-style git@host:repo.git)
  */
@@ -112,6 +124,7 @@ export function parseSourceArg(input: string): SourceSpec {
     `Unrecognized source: "${raw}".\n` +
       `Accepted forms:\n` +
       `  owner/repo[#ref]\n` +
+      `  owner/repo#graft=<name>          (published in regraft.yaml)\n` +
       `  owner/repo/tree/<ref>/<path>   owner/repo/blob/<ref>/<file>\n` +
       `  owner/repo/pull/<number>       (tracks the PR head, a live ref)\n` +
       `  https://github.com/owner/repo[/tree|blob/<ref>/<path>|/pull/<number>]\n` +
@@ -140,6 +153,7 @@ export function repoNameFromUrl(url: string): string {
 
 /** Default local dest: basename of the subpath, or the repo name for repo roots. */
 export function defaultDest(spec: SourceSpec): string {
+  if (spec.graft) return spec.graft;
   if (spec.path === "") return repoNameFromUrl(spec.url);
   return spec.path.split("/").pop() ?? spec.path;
 }

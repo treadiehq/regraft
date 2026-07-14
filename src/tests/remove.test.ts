@@ -19,7 +19,7 @@ describe("regraft remove", () => {
     expect(result.exitCode).toBe(0);
     expect(result.hard).toBe(false);
     expect(result.deletedFiles).toEqual([]);
-    expect(loadManifest(project)!.sources).toEqual([]);
+    expect(loadManifest(project)!.grafts).toEqual([]);
     expect(existsSync(join(project, "vendor/a.ts"))).toBe(true);
   });
 
@@ -48,6 +48,22 @@ describe("regraft remove", () => {
     expect(md).toContain("orphaned");
   });
 
+  it("does not reactivate historical Intent when a new Graft reuses the destination", () => {
+    const oldUpstream = initUpstream({ "lib/a.ts": "a\n" });
+    const newUpstream = initUpstream({ "lib/a.ts": "replacement\n" });
+    const project = makeProject();
+    addCommand(`${oldUpstream.url}#main:lib`, "vendor", { cwd: project, name: "old-lib" });
+    writeFiles(project, { "vendor/a.ts": "customized old behavior\n" });
+    noteCommand("Intent belonging only to the old Graft", { cwd: project });
+    removeCommand("old-lib", { cwd: project, hard: true });
+    addCommand(`${newUpstream.url}#main:lib`, "vendor", { cwd: project, name: "new-lib" });
+
+    const md = readFileSync(join(project, "PATCH.md"), "utf8");
+    expect(md).toContain("Intent belonging only to the old Graft");
+    expect(md).toContain("orphaned");
+    expect(loadManifest(project)!.grafts[0]!.files["a.ts"]!.intentIds).toEqual([]);
+  });
+
   it("matches on dest substrings too (people type the folder name)", () => {
     const up = initUpstream({ "lib/a.ts": "a\n" });
     const project = makeProject();
@@ -56,7 +72,7 @@ describe("regraft remove", () => {
     const result = removeCommand("vendor/widgets", { cwd: project });
     expect(result.exitCode).toBe(0);
     expect(result.removed.dest).toBe("vendor/widgets");
-    expect(loadManifest(project)!.sources).toEqual([]);
+    expect(loadManifest(project)!.grafts).toEqual([]);
   });
 
   it("errors when a dest query is ambiguous, listing the matches", () => {
@@ -72,7 +88,7 @@ describe("regraft remove", () => {
     const up = initUpstream({ "lib/a.ts": "a\n" });
     const project = makeProject();
     addCommand(`${up.url}#main:lib`, "vendor", { cwd: project });
-    expect(() => removeCommand("zzz-no-match", { cwd: project })).toThrow(new RegExp(`Tracked sources:[\\s\\S]*${up.dir.split("/").pop()!}`));
+    expect(() => removeCommand("zzz-no-match", { cwd: project })).toThrow(new RegExp(`Known Grafts:[\\s\\S]*${up.dir.split("/").pop()!}`));
   });
 
   it("errors when the query is ambiguous, listing the matches", () => {
@@ -91,6 +107,6 @@ describe("regraft remove", () => {
     addCommand(`${up.url}#main:lib`, "vendor", { cwd: project });
     const result = removeCommand(up.url, { cwd: project, hard: true });
     expect(Object.keys(result).sort()).toEqual(["command", "deletedFiles", "exitCode", "hard", "removed"].sort());
-    expect(Object.keys(result.removed).sort()).toEqual(["dest", "path", "remoteRef", "url"].sort());
+    expect(Object.keys(result.removed).sort()).toEqual(["dest", "id", "name", "path", "remoteRef", "url"].sort());
   });
 });

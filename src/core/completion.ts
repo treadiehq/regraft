@@ -9,13 +9,15 @@ interface CommandSpec {
 }
 
 const COMMANDS: readonly CommandSpec[] = [
-  { name: "add", description: "Copy files or directories from git repos", options: ["--force", "--adopt", "--dry-run", "--json"] },
-  { name: "diff", description: "Show local changes, or upstream changes", options: ["--upstream", "--json"] },
+  { name: "add", description: "Create a Graft from a git source", options: ["--name", "--force", "--adopt", "--dry-run", "--json"] },
+  { name: "diff", description: "Show local changes, or upstream changes", options: ["--graft", "--upstream", "--json"] },
   { name: "note", description: "Record why you changed tracked files", options: ["--files", "--json"] },
   { name: "status", description: "Check tracked files and upstream updates", options: ["--offline", "--json"] },
-  { name: "pull", description: "Pull upstream updates into tracked files", options: ["--dry-run", "--force", "--json"] },
-  { name: "resolve", description: "Finish conflicts after fixing files", options: ["--note", "--json"] },
-  { name: "remove", description: "Stop tracking a source", options: ["--hard", "--json"] },
+  { name: "pull", description: "Pull upstream Updates into Grafts", options: ["--dry-run", "--force", "--json"] },
+  { name: "resolve", description: "Finish pending Graft judgment", options: ["--graft", "--note", "--json"] },
+  { name: "inspect", description: "Inspect Graft provenance and context", options: ["--offline", "--json"] },
+  { name: "remove", description: "Stop tracking a Graft", options: ["--hard", "--json"] },
+  { name: "validate", description: "Validate a publishable regraft.yaml", options: ["--json"] },
   { name: "update", description: "Update regraft itself to the latest release", options: [] },
   { name: "completion", description: "Print a shell completion script", options: ["--json"] },
 ];
