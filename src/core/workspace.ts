@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, rmdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 export const WORKDIR_NAME = ".regraft";
@@ -19,19 +19,23 @@ export function findRoot(cwd: string): string {
 
 /** Create .regraft/ with a self-ignoring .gitignore. Returns its path. */
 export function ensureWorkdir(root: string): string {
-  const dir = join(root, WORKDIR_NAME);
+  let dir = managedFilePath(root, WORKDIR_NAME);
   mkdirSync(dir, { recursive: true });
-  const gitignore = join(dir, ".gitignore");
-  if (!existsSync(gitignore)) writeFileSync(gitignore, "*\n");
+  dir = managedFilePath(root, WORKDIR_NAME);
+  const gitignorePath = `${WORKDIR_NAME}/.gitignore`;
+  const gitignore = managedFilePath(root, gitignorePath);
+  if (!existsSync(gitignore)) writeFileEnsuringDir(root, gitignorePath, "*\n");
   return dir;
 }
 
 export function cacheRoot(root: string): string {
-  return join(ensureWorkdir(root), "cache");
+  ensureWorkdir(root);
+  return managedFilePath(root, `${WORKDIR_NAME}/cache`);
 }
 
 export function briefsDir(root: string): string {
-  return join(ensureWorkdir(root), "briefs");
+  ensureWorkdir(root);
+  return managedFilePath(root, `${WORKDIR_NAME}/briefs`);
 }
 
 /**
@@ -82,9 +86,42 @@ export function assertSafeProjectPath(p: string, label = "path", opts: { allowEm
   return normalized;
 }
 
-/** Write a file, creating parent directories as needed. */
-export function writeFileEnsuringDir(absPath: string, data: Buffer | string): void {
+/**
+ * Resolve a managed project file without following symlinks below the project
+ * root. A missing component is safe; later components cannot exist yet.
+ */
+export function managedFilePath(root: string, projectRelativePath: string): string {
+  const safePath = assertSafeProjectPath(projectRelativePath, "managed file path");
+  const absoluteRoot = realpathSync(resolve(root));
+  const parts = safePath.split("/");
+  let current = absoluteRoot;
+
+  for (let i = 0; i < parts.length; i += 1) {
+    current = join(current, parts[i] as string);
+    try {
+      if (lstatSync(current).isSymbolicLink()) {
+        const component = parts.slice(0, i + 1).join("/");
+        throw new Error(
+          `Refusing to access "${safePath}": "${component}" is a symbolic link. ` +
+            "Regraft does not follow symlinks in managed paths.",
+        );
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") break;
+      throw err;
+    }
+  }
+
+  return join(absoluteRoot, ...parts);
+}
+
+/** Write a managed project file, creating non-symlink parent directories as needed. */
+export function writeFileEnsuringDir(root: string, projectRelativePath: string, data: Buffer | string): void {
+  let absPath = managedFilePath(root, projectRelativePath);
   mkdirSync(dirname(absPath), { recursive: true });
+  // Check again after directory creation so every newly established component
+  // is covered before the write.
+  absPath = managedFilePath(root, projectRelativePath);
   writeFileSync(absPath, data);
 }
 
@@ -92,7 +129,7 @@ export function writeFileEnsuringDir(absPath: string, data: Buffer | string): vo
 export function pruneEmptyDirs(root: string, startRelDir: string): void {
   let dir = startRelDir;
   while (dir && dir !== "." && dir !== "/" && dir !== "..") {
-    const abs = join(root, dir);
+    const abs = managedFilePath(root, dir);
     try {
       if (!existsSync(abs) || readdirSync(abs).length > 0) break;
       rmdirSync(abs);

@@ -1,7 +1,6 @@
-import { join } from "node:path";
 import { hashFileIfExists } from "./hash";
 import type { Intent, Manifest } from "./manifest";
-import { projectPath } from "./workspace";
+import { managedFilePath, projectPath } from "./workspace";
 
 export type FileStatus =
   | "clean"
@@ -67,7 +66,7 @@ export function findUnrecordedModifications(root: string, manifest: Manifest): s
     for (const [rel, storedHash] of Object.entries(source.files)) {
       if (source.unresolved.includes(rel)) continue;
       const proj = projectPath(source.dest, rel);
-      const diskHash = hashFileIfExists(join(root, proj));
+      const diskHash = hashFileIfExists(managedFilePath(root, proj));
       if (diskHash === null || diskHash === storedHash) continue;
       if (intentHashes.get(proj)?.has(diskHash)) continue;
       result.push(proj);

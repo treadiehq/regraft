@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
@@ -56,6 +56,18 @@ describe("manifest load/save", () => {
     const dir = makeTempDir();
     writeFileSync(join(dir, "regraft.json"), "{ not json");
     expect(() => loadManifest(dir)).toThrow(/not valid JSON/);
+  });
+
+  it.skipIf(process.platform === "win32")("refuses a symlinked manifest", () => {
+    const dir = makeTempDir();
+    const target = join(dir, "outside.json");
+    const original = JSON.stringify(emptyManifest());
+    writeFileSync(target, original);
+    symlinkSync("outside.json", join(dir, "regraft.json"));
+
+    expect(() => loadManifest(dir)).toThrow(/symbolic link/);
+    expect(() => saveManifest(dir, sampleManifest())).toThrow(/symbolic link/);
+    expect(readFileSync(target, "utf8")).toBe(original);
   });
 
   it("rejects schema violations, naming the offending path", () => {

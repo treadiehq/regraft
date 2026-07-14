@@ -1,7 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
-import { assertSafeProjectPath } from "./workspace";
+import { assertSafeProjectPath, managedFilePath, writeFileEnsuringDir } from "./workspace";
 
 export const MANIFEST_FILE = "regraft.json";
 const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/, "must be a sha256 hex digest");
@@ -79,7 +78,7 @@ export function emptyManifest(): Manifest {
 
 /** Load and validate regraft.json. Returns null if the file does not exist. */
 export function loadManifest(root: string): Manifest | null {
-  const file = join(root, MANIFEST_FILE);
+  const file = managedFilePath(root, MANIFEST_FILE);
   if (!existsSync(file)) return null;
   let parsed: unknown;
   try {
@@ -131,5 +130,5 @@ export function saveManifest(root: string, manifest: Manifest): void {
       files: sortRecord(i.files),
     })),
   };
-  writeFileSync(join(root, MANIFEST_FILE), JSON.stringify(canonical, null, 2) + "\n");
+  writeFileEnsuringDir(root, MANIFEST_FILE, JSON.stringify(canonical, null, 2) + "\n");
 }

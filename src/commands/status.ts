@@ -1,9 +1,8 @@
-import { join } from "node:path";
 import { classifyFile, intentHashesByPath, intentHashesFor, type FileStatus } from "../core/classify";
 import { ensureGitAvailable, resolveRemote } from "../core/git";
 import { hashFileIfExists } from "../core/hash";
 import { requireManifest } from "../core/manifest";
-import { findRoot, projectPath } from "../core/workspace";
+import { findRoot, managedFilePath, projectPath } from "../core/workspace";
 
 export interface StatusOptions {
   cwd: string;
@@ -72,7 +71,7 @@ export function statusCommand(opts: StatusOptions): StatusResult {
       const proj = projectPath(source.dest, rel);
       const status = classifyFile({
         storedHash,
-        diskHash: hashFileIfExists(join(root, proj)),
+        diskHash: hashFileIfExists(managedFilePath(root, proj)),
         unresolved: source.unresolved.includes(rel),
         intentHashes: intentHashesFor(intentHashes, proj),
       });

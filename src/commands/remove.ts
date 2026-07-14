@@ -1,8 +1,8 @@
 import { existsSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { requireManifest, saveManifest } from "../core/manifest";
 import { writePatchMd } from "../core/patchmd";
-import { findRoot, normalizeUserPath, projectPath, pruneEmptyDirs } from "../core/workspace";
+import { findRoot, managedFilePath, normalizeUserPath, projectPath, pruneEmptyDirs } from "../core/workspace";
 
 export interface RemoveOptions {
   cwd: string;
@@ -47,7 +47,7 @@ export function removeCommand(query: string, opts: RemoveOptions): RemoveResult 
   if (opts.hard) {
     for (const rel of Object.keys(source.files).sort()) {
       const proj = projectPath(source.dest, rel);
-      const abs = join(root, proj);
+      const abs = managedFilePath(root, proj);
       if (existsSync(abs)) {
         rmSync(abs);
         deletedFiles.push(proj);

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { addCommand } from "../commands/add";
 import { diffCommand } from "../commands/diff";
+import { pullCommand } from "../commands/pull";
 import { unifiedDiff } from "../core/diff";
 import { cleanupTempDirs, commitUpstream, initUpstream, makeProject, writeFiles } from "./helpers";
 
@@ -66,6 +67,31 @@ describe("regraft diff (local drift)", () => {
     const entry = result.sources[0]!.files[0]!;
     expect(entry.binary).toBe(true);
     expect(entry.diff).toBe("");
+    expect(entry.note).toContain("binary");
+  });
+
+  it("marks a locally modified binary as binary after upstream deletes it", () => {
+    const original = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]);
+    const local = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x02]);
+    const up = initUpstream({ "lib/logo.png": original });
+    const project = makeProject();
+    addCommand(`${up.url}#main:lib`, "vendor", { cwd: project });
+    writeFiles(project, { "vendor/logo.png": local });
+    const deletedAt = commitUpstream(up, {}, { remove: ["lib/logo.png"] });
+
+    const pull = pullCommand({ cwd: project });
+    expect(pull.sources[0]!.warnings[0]).toMatchObject({ path: "vendor/logo.png" });
+
+    const result = diffCommand({ cwd: project });
+    const entry = result.sources[0]!.files[0]!;
+    expect(result.sources[0]!.pinnedSha).toBe(deletedAt);
+    expect(entry).toMatchObject({
+      path: "vendor/logo.png",
+      change: "modified",
+      binary: true,
+      diff: "",
+    });
+    expect(entry.note).toContain("no baseline");
     expect(entry.note).toContain("binary");
   });
 

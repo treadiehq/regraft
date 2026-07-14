@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import {
   ensureCacheRepo,
   ensureGitAvailable,
@@ -16,6 +15,7 @@ import {
   cacheRoot,
   ensureWorkdir,
   findRoot,
+  managedFilePath,
   normalizeUserPath,
   projectPath,
   upstreamPath,
@@ -137,10 +137,10 @@ export function addCommand(sourceArg: string, destArg: string | undefined, opts:
     const buf = readFileAt(cache, sha, upstreamPath(spec.path, rel));
     const upHash = sha256(buf);
     const proj = projectPath(dest, rel);
-    const abs = join(root, proj);
+    const abs = managedFilePath(root, proj);
     const diskHash = hashFileIfExists(abs);
     if (diskHash === null) {
-      if (!dryRun) writeFileEnsuringDir(abs, buf);
+      if (!dryRun) writeFileEnsuringDir(root, proj, buf);
       files[rel] = upHash;
       written.push(proj);
     } else if (diskHash === upHash) {
@@ -152,7 +152,7 @@ export function addCommand(sourceArg: string, destArg: string | undefined, opts:
       files[rel] = upHash;
       adopted.push(proj);
     } else if (opts.force) {
-      if (!dryRun) writeFileEnsuringDir(abs, buf);
+      if (!dryRun) writeFileEnsuringDir(root, proj, buf);
       files[rel] = upHash;
       written.push(proj);
     } else {

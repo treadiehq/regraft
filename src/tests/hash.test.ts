@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { hashFileIfExists, isBinary, sha256 } from "../core/hash";
@@ -22,6 +22,14 @@ describe("hashFileIfExists", () => {
     expect(hashFileIfExists(join(dir, "nope.txt"))).toBeNull();
     writeFileSync(join(dir, "yes.txt"), "content");
     expect(hashFileIfExists(join(dir, "yes.txt"))).toBe(sha256("content"));
+  });
+
+  it.skipIf(process.platform === "win32")("refuses to follow symbolic links", () => {
+    const dir = makeTempDir();
+    writeFileSync(join(dir, "target.txt"), "content");
+    const link = join(dir, "link.txt");
+    symlinkSync("target.txt", link);
+    expect(() => hashFileIfExists(link)).toThrow(/symbolic link/);
   });
 });
 

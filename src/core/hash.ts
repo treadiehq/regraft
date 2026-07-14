@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 
 export function sha256(data: Buffer | string): string {
   return createHash("sha256").update(data).digest("hex");
@@ -7,13 +7,20 @@ export function sha256(data: Buffer | string): string {
 
 /** Hash a file on disk, or return null if it does not exist. */
 export function hashFileIfExists(filePath: string): string | null {
-  if (!existsSync(filePath)) return null;
-  return sha256(readFileSync(filePath));
+  const data = readFileIfExists(filePath);
+  return data === null ? null : sha256(data);
 }
 
 /** Read a file on disk, or return null if it does not exist. */
 export function readFileIfExists(filePath: string): Buffer | null {
-  if (!existsSync(filePath)) return null;
+  try {
+    if (lstatSync(filePath).isSymbolicLink()) {
+      throw new Error(`Refusing to follow symbolic link: ${filePath}`);
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
   return readFileSync(filePath);
 }
 

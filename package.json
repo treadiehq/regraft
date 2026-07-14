@@ -1,6 +1,6 @@
 {
   "name": "regraft",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Copy code from any git repo, change it for your project, and keep pulling upstream updates later.",
   "type": "module",
   "repository": {

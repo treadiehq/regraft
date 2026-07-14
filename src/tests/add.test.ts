@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { addCliCommand, addCommand, type AddManyResult } from "../commands/add";
@@ -89,6 +89,39 @@ describe("regraft add", () => {
     expect(result.exitCode).toBe(0);
     expect(result.written).toEqual(["vendor/diff.ts"]);
     expect(readFileSync(join(project, "vendor/diff.ts"), "utf8")).toBe("upstream\n");
+  });
+
+  it.skipIf(process.platform === "win32")("refuses to overwrite a destination symlink with --force", () => {
+    const up = initUpstream({ "lib/file.txt": "upstream\n" });
+    const project = makeProject();
+    writeFiles(project, { "precious.txt": "keep me\n" });
+    mkdirSync(join(project, "vendor"));
+    const link = join(project, "vendor/file.txt");
+    symlinkSync("../precious.txt", link);
+
+    expect(() => addCommand(`${up.url}#main:lib`, "vendor", { cwd: project, force: true })).toThrow(/symbolic link/);
+    expect(readFileSync(join(project, "precious.txt"), "utf8")).toBe("keep me\n");
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")("refuses dangling symlinks instead of creating their targets", () => {
+    const up = initUpstream({ "lib/file.txt": "upstream\n" });
+    const project = makeProject();
+    mkdirSync(join(project, "vendor"));
+    symlinkSync("../outside.txt", join(project, "vendor/file.txt"));
+
+    expect(() => addCommand(`${up.url}#main:lib`, "vendor", { cwd: project })).toThrow(/symbolic link/);
+    expect(existsSync(join(project, "outside.txt"))).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("refuses a symlinked destination directory", () => {
+    const up = initUpstream({ "lib/file.txt": "upstream\n" });
+    const project = makeProject();
+    const outside = makeProject();
+    symlinkSync(outside, join(project, "vendor"), "dir");
+
+    expect(() => addCommand(`${up.url}#main:lib`, "vendor", { cwd: project })).toThrow(/symbolic link/);
+    expect(existsSync(join(outside, "file.txt"))).toBe(false);
   });
 
   it("--dry-run writes nothing at all", () => {

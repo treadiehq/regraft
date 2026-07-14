@@ -1,10 +1,9 @@
-import { join } from "node:path";
 import { intentHashesByPath } from "../core/classify";
 import { hashFileIfExists, readFileIfExists, sha256 } from "../core/hash";
 import { requireManifest, saveManifest, type Intent, type Source } from "../core/manifest";
 import { hasConflictMarkers } from "../core/merge";
 import { writePatchMd } from "../core/patchmd";
-import { findRoot, normalizeUserPath, projectPath } from "../core/workspace";
+import { findRoot, managedFilePath, normalizeUserPath, projectPath } from "../core/workspace";
 import { recordIntent } from "./note";
 
 export interface ResolveOptions {
@@ -58,7 +57,7 @@ export function resolveCommand(opts: ResolveOptions): ResolveResult {
   const markersRemain: string[] = [];
   const diskHashes = new Map<string, string>();
   for (const t of targets) {
-    const buf = readFileIfExists(join(root, t));
+    const buf = readFileIfExists(managedFilePath(root, t));
     if (buf === null) {
       throw new Error(`"${t}" is missing from disk. Restore it (or take upstream with \`regraft pull --force\`) before resolving.`);
     }
@@ -85,7 +84,7 @@ export function resolveCommand(opts: ResolveOptions): ResolveResult {
   } else {
     const intentHashes = intentHashesByPath(manifest.intents);
     needsNote = targets.filter((t) => {
-      const disk = hashFileIfExists(join(root, t));
+      const disk = hashFileIfExists(managedFilePath(root, t));
       return disk === null || !intentHashes.get(t)?.has(disk);
     });
   }

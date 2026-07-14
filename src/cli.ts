@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import { addCliCommand } from "./commands/add";
 import { completionCommand } from "./commands/completion";
@@ -10,6 +9,7 @@ import { removeCommand } from "./commands/remove";
 import { resolveCommand } from "./commands/resolve";
 import { statusCommand } from "./commands/status";
 import { updateCommand } from "./commands/update";
+import { resolveVersion } from "./core/version";
 import {
   printAddCli,
   printCompletion,
@@ -28,19 +28,7 @@ import {
  * binary); source and dev builds fall back to reading it from package.json.
  */
 declare const __REGRAFT_VERSION__: string | undefined;
-function resolveVersion(): string {
-  if (typeof __REGRAFT_VERSION__ === "string" && __REGRAFT_VERSION__.length > 0) {
-    return __REGRAFT_VERSION__;
-  }
-  try {
-    const { version } = JSON.parse(
-      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-    ) as { version: string };
-    return version;
-  } catch {
-    return "0.0.0";
-  }
-}
+const bakedVersion = typeof __REGRAFT_VERSION__ === "string" ? __REGRAFT_VERSION__ : undefined;
 
 function execute<T extends { exitCode: number }>(json: boolean, printer: (result: T) => void, fn: () => T): void {
   try {
@@ -64,7 +52,7 @@ program
       "upstream updates later. regraft tracks what changed and writes conflict\n" +
       "briefs when updates need judgment.",
   )
-  .version(resolveVersion())
+  .version(resolveVersion(bakedVersion, new URL("../package.json", import.meta.url)))
   .showHelpAfterError();
 
 program

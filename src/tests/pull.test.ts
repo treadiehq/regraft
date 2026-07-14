@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { addCommand } from "../commands/add";
@@ -169,6 +169,19 @@ describe("regraft pull", () => {
     expect(readFileSync(join(project, "vendor/gone.txt"), "utf8")).toBe("heavily customized\n");
     expect(result.brief).not.toBeNull();
     expect(readFileSync(join(project, result.brief!), "utf8")).toContain("vendor/gone.txt");
+  });
+
+  it.skipIf(process.platform === "win32")("refuses a tracked symlink without modifying its target", () => {
+    const { up, project } = setup({ "lib/file.txt": "version 1\n" });
+    const tracked = join(project, "vendor/file.txt");
+    rmSync(tracked);
+    writeFiles(project, { "precious.txt": "keep me\n" });
+    symlinkSync("../precious.txt", tracked);
+    commitUpstream(up, { "lib/file.txt": "version 2\n" });
+
+    expect(() => pullCommand({ cwd: project })).toThrow(/symbolic link/);
+    expect(readFileSync(join(project, "precious.txt"), "utf8")).toBe("keep me\n");
+    expect(lstatSync(tracked).isSymbolicLink()).toBe(true);
   });
 
   it("never merges binaries: conflicting binary changes are skipped with a warning", () => {

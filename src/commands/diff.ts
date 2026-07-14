@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { unifiedDiff } from "../core/diff";
 import {
   ensureCacheRepo,
@@ -11,7 +10,7 @@ import {
 } from "../core/git";
 import { isBinary, readFileIfExists, sha256 } from "../core/hash";
 import { requireManifest, type Source } from "../core/manifest";
-import { cacheRoot, findRoot, normalizeUserPath, projectPath, upstreamPath } from "../core/workspace";
+import { cacheRoot, findRoot, managedFilePath, normalizeUserPath, projectPath, upstreamPath } from "../core/workspace";
 
 export interface DiffOptions {
   cwd: string;
@@ -95,7 +94,7 @@ function diffLocal(root: string, source: Source, filter: Set<string> | null): Di
     const proj = projectPath(source.dest, rel);
     if (filter && !filter.has(proj)) continue;
     const stored = source.files[rel] as string;
-    const diskBuf = readFileIfExists(join(root, proj));
+    const diskBuf = readFileIfExists(managedFilePath(root, proj));
     if (diskBuf === null) {
       result.files.push({ path: proj, change: "missing", binary: false, diff: "", note: "file is missing from disk" });
       continue;
@@ -118,12 +117,17 @@ function diffLocal(root: string, source: Source, filter: Set<string> | null): Di
       : null;
 
     if (baseBuf === null) {
+      const binary = isBinary(diskBuf);
       result.files.push({
         path: proj,
         change: "modified",
-        binary: false,
+        binary,
         diff: "",
-        note: joinNotes("not present upstream at the pinned commit; no baseline to diff against", unresolvedNote),
+        note: joinNotes(
+          "not present upstream at the pinned commit; no baseline to diff against",
+          binary ? "binary file; no text diff" : null,
+          unresolvedNote,
+        ),
       });
       continue;
     }

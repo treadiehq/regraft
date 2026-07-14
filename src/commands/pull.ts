@@ -1,5 +1,5 @@
 import { rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { renderBrief, writeBrief, type BriefSection, type BriefWarning } from "../core/brief";
 import { findUnrecordedModifications } from "../core/classify";
 import {
@@ -19,6 +19,7 @@ import { writePatchMd } from "../core/patchmd";
 import {
   cacheRoot,
   findRoot,
+  managedFilePath,
   projectPath,
   pruneEmptyDirs,
   upstreamPath,
@@ -183,7 +184,7 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
 
   for (const rel of rels) {
     const proj = projectPath(source.dest, rel);
-    const abs = join(root, proj);
+    const abs = managedFilePath(root, proj);
     const stored = source.files[rel];
     const diskBuf = readFileIfExists(abs);
     const diskHash = diskBuf === null ? null : sha256(diskBuf);
@@ -213,7 +214,7 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
       if (newBuf === null || newHash === null) continue;
       if (diskHash === null) {
         if (!ctx.dryRun) {
-          writeFileEnsuringDir(abs, newBuf);
+          writeFileEnsuringDir(root, proj, newBuf);
           source.files[rel] = newHash;
         }
         result.added.push(proj);
@@ -222,7 +223,7 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
         result.added.push(proj);
       } else if (ctx.force) {
         if (!ctx.dryRun) {
-          writeFileEnsuringDir(abs, newBuf);
+          writeFileEnsuringDir(root, proj, newBuf);
           source.files[rel] = newHash;
         }
         result.forced.push(proj);
@@ -267,7 +268,7 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
     if (diskHash === stored) {
       // No local edits: fast-forward to upstream.
       if (!ctx.dryRun) {
-        writeFileEnsuringDir(abs, newBuf);
+        writeFileEnsuringDir(root, proj, newBuf);
         source.files[rel] = newHash;
       }
       result.fastForwarded.push(proj);
@@ -286,7 +287,7 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
     if (binary) {
       if (ctx.force) {
         if (!ctx.dryRun) {
-          writeFileEnsuringDir(abs, newBuf);
+          writeFileEnsuringDir(root, proj, newBuf);
           source.files[rel] = newHash;
         }
         result.forced.push(proj);
@@ -299,19 +300,19 @@ function pullSource(root: string, cache: string, source: Source, newSha: string,
     const merged = mergeThreeWay({ base: oldBuf ?? Buffer.alloc(0), ours: diskBuf as Buffer, theirs: newBuf });
     if (!merged.conflicted) {
       if (!ctx.dryRun) {
-        writeFileEnsuringDir(abs, merged.content);
+        writeFileEnsuringDir(root, proj, merged.content);
         source.files[rel] = sha256(merged.content);
       }
       result.merged.push(proj);
     } else if (ctx.force) {
       if (!ctx.dryRun) {
-        writeFileEnsuringDir(abs, newBuf);
+        writeFileEnsuringDir(root, proj, newBuf);
         source.files[rel] = newHash;
       }
       result.forced.push(proj);
     } else {
       if (!ctx.dryRun) {
-        writeFileEnsuringDir(abs, merged.content);
+        writeFileEnsuringDir(root, proj, merged.content);
         source.unresolved.push(rel);
       }
       result.conflicts.push(proj);

@@ -1,7 +1,5 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Manifest } from "./manifest";
-import { projectPath } from "./workspace";
+import { projectPath, writeFileEnsuringDir } from "./workspace";
 
 export const PATCH_MD_FILE = "PATCH.md";
 
@@ -53,5 +51,5 @@ export function renderPatchMd(manifest: Manifest): string {
 }
 
 export function writePatchMd(root: string, manifest: Manifest): void {
-  writeFileSync(join(root, PATCH_MD_FILE), renderPatchMd(manifest));
+  writeFileEnsuringDir(root, PATCH_MD_FILE, renderPatchMd(manifest));
 }

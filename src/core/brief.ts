@@ -1,7 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
 import type { Intent } from "./manifest";
-import { briefsDir } from "./workspace";
+import { briefsDir, WORKDIR_NAME, writeFileEnsuringDir } from "./workspace";
 
 export interface BriefWarning {
   path: string;
@@ -100,9 +98,8 @@ export function renderBrief(sections: BriefSection[], intents: readonly Intent[]
 
 /** Write the brief; returns its project-root-relative path. */
 export function writeBrief(root: string, content: string, generatedAt: Date): string {
-  const dir = briefsDir(root);
-  mkdirSync(dir, { recursive: true });
-  const file = join(dir, `${briefTimestamp(generatedAt)}.md`);
-  writeFileSync(file, content);
-  return relative(root, file);
+  briefsDir(root);
+  const file = `${WORKDIR_NAME}/briefs/${briefTimestamp(generatedAt)}.md`;
+  writeFileEnsuringDir(root, file, content);
+  return file;
 }

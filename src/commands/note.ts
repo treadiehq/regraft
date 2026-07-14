@@ -1,10 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
 import { findUnrecordedModifications } from "../core/classify";
 import { hashFileIfExists } from "../core/hash";
 import { requireManifest, saveManifest, type Intent, type Manifest, type Source } from "../core/manifest";
 import { writePatchMd } from "../core/patchmd";
-import { findRoot, normalizeUserPath, projectPath } from "../core/workspace";
+import { findRoot, managedFilePath, normalizeUserPath, projectPath } from "../core/workspace";
 
 export interface NoteOptions {
   cwd: string;
@@ -76,7 +75,7 @@ export function noteCommand(description: string, opts: NoteOptions): NoteResult 
 
   const files: Record<string, string> = {};
   for (const t of [...targets].sort()) {
-    const disk = hashFileIfExists(join(root, t));
+    const disk = hashFileIfExists(managedFilePath(root, t));
     if (disk === null) throw new Error(`"${t}" does not exist on disk; cannot snapshot it.`);
     files[t] = disk;
   }
