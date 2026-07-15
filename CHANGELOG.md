@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.5 - 2026-07-15
+
+### Fixed
+
+- Corrected `regraft add` output so matching files are not reported as tracked
+  when Graft creation rolls back or runs as a dry-run plan.
+
 ## 0.1.4 - 2026-07-14
 
 ### Added
