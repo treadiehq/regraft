@@ -46,7 +46,14 @@ export function printAdd(r: AddResult): void {
       `  ${r.source.url}${r.source.path ? ` #${r.source.path}` : ""} (${r.source.remoteRef}) at ${short(r.source.pinnedSha)} → ${r.source.dest}`,
   );
   for (const p of r.written) out(`  ${green("wrote")}     ${p}`);
-  for (const p of r.identical) out(`  ${dim("identical")} ${p} (tracked without writing)`);
+  const identicalDetail = r.dryRun
+    ? r.exitCode === 0
+      ? "matches upstream; would be tracked"
+      : "matches upstream; would be tracked after skipped files are resolved"
+    : r.exitCode === 0
+      ? "tracked without writing"
+      : "matches upstream; not tracked";
+  for (const p of r.identical) out(`  ${dim("identical")} ${p} (${identicalDetail})`);
   for (const p of r.adopted) out(`  ${yellow("kept")}      ${p} (kept your version; tracked as a local change)`);
   for (const s of r.skipped) out(`  ${yellow("skipped")}   ${s.path}: ${s.reason}`);
   const counts = [`${r.written.length} written`, `${r.identical.length} identical`];
