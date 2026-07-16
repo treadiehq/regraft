@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.1.6 - 2026-07-16
+
+### Fixed
+
+- Reused existing Intent when resolving content that matches a recorded
+  snapshot instead of requiring a redundant note.
+- Made `regraft add --dry-run` consistently describe planned, rather than
+  completed, writes and Graft creation.
+- Formatted `regraft update` failures as normal CLI errors without raw stack
+  traces.
+- Rejected empty destination selectors such as `regraft remove .` to prevent
+  unintended Graft removal.
+- Reported missing tracked files in the `regraft status` summary instead of
+  labeling affected Grafts as up to date.
+
 ## 0.1.5 - 2026-07-15
 
 ### Fixed

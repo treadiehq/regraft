@@ -40,12 +40,19 @@ export function printAdd(r: AddResult): void {
     out(`${prefix}Graft "${r.source.name}" already tracks ${r.source.url}${r.source.path ? ` (path ${r.source.path})` : ""} → ${r.source.dest}. Nothing to do.`);
     return;
   }
-  const label = r.exitCode === 1 ? "Graft not created" : "Added Graft";
+  const label = r.dryRun
+    ? r.exitCode === 1
+      ? "Would not add Graft"
+      : "Would add Graft"
+    : r.exitCode === 1
+      ? "Graft not created"
+      : "Added Graft";
   out(
     `${prefix}${bold(label)} ${r.source.name} ${dim(`[${r.source.id}]`)}\n` +
       `  ${r.source.url}${r.source.path ? ` #${r.source.path}` : ""} (${r.source.remoteRef}) at ${short(r.source.pinnedSha)} → ${r.source.dest}`,
   );
-  for (const p of r.written) out(`  ${green("wrote")}     ${p}`);
+  const writeVerb = r.dryRun ? "would write" : "wrote";
+  for (const p of r.written) out(`  ${green(writeVerb.padEnd(11))} ${p}`);
   const identicalDetail = r.dryRun
     ? r.exitCode === 0
       ? "matches upstream; would be tracked"
@@ -53,12 +60,18 @@ export function printAdd(r: AddResult): void {
     : r.exitCode === 0
       ? "tracked without writing"
       : "matches upstream; not tracked";
-  for (const p of r.identical) out(`  ${dim("identical")} ${p} (${identicalDetail})`);
-  for (const p of r.adopted) out(`  ${yellow("kept")}      ${p} (kept your version; tracked as a local change)`);
-  for (const s of r.skipped) out(`  ${yellow("skipped")}   ${s.path}: ${s.reason}`);
-  const counts = [`${r.written.length} written`, `${r.identical.length} identical`];
-  if (r.adopted.length > 0) counts.push(`${r.adopted.length} kept`);
-  counts.push(`${r.skipped.length} skipped`);
+  for (const p of r.identical) out(`  ${dim("identical".padEnd(11))} ${p} (${identicalDetail})`);
+  const keepVerb = r.dryRun ? "would keep" : "kept";
+  const adoptedDetail = r.dryRun
+    ? "your version; would be tracked as a local change"
+    : "kept your version; tracked as a local change";
+  for (const p of r.adopted) out(`  ${yellow(keepVerb.padEnd(11))} ${p} (${adoptedDetail})`);
+  const skipVerb = r.dryRun ? "would skip" : "skipped";
+  for (const s of r.skipped) out(`  ${yellow(skipVerb.padEnd(11))} ${s.path}: ${s.reason}`);
+  const writtenCount = r.dryRun ? `${r.written.length} would be written` : `${r.written.length} written`;
+  const counts = [writtenCount, `${r.identical.length} identical`];
+  if (r.adopted.length > 0) counts.push(r.dryRun ? `${r.adopted.length} would be kept` : `${r.adopted.length} kept`);
+  counts.push(r.dryRun ? `${r.skipped.length} would be skipped` : `${r.skipped.length} skipped`);
   out(`${prefix}${counts.join(", ")}.`);
   if (!r.dryRun && r.skipped.length > 0) {
     out(yellow("Graft state was not created because some files were skipped."));
@@ -80,6 +93,16 @@ export function printAddCli(r: AddResult | AddManyResult): void {
     out();
   }
   const failed = r.results.filter((x) => x.exitCode === 1).length;
+  if (r.dryRun) {
+    out(
+      dim(
+        failed > 0
+          ? `[dry-run] ${r.results.length} sources evaluated, ${failed} would not be added.`
+          : `[dry-run] ${r.results.length} sources would be added.`,
+      ),
+    );
+    return;
+  }
   out(
     failed > 0
       ? yellow(`${r.results.length} sources processed, ${failed} with skipped files.`)
@@ -138,20 +161,23 @@ export function printStatus(r: StatusResult): void {
   for (const source of r.sources) {
     const label = `${source.url.replace(/^https?:\/\/|\.git$/g, "")}${source.path ? `/${source.path}` : ""}`;
     const pending = source.files.filter((file) => file.status === "conflict-unresolved" || file.status === "reconciliation-pending").length;
+    const missing = source.files.filter((file) => file.status === "missing").length;
     const unrecorded = source.files.filter((file) => file.status === "modified-unrecorded").length;
     const adapted = source.files.filter((file) => file.status === "modified+intent").length;
     const status =
       pending > 0
         ? `${pending} pending judgment`
-        : unrecorded > 0
-          ? `${unrecorded} unrecorded change${unrecorded === 1 ? "" : "s"}`
-          : source.stale
-            ? "update available"
-            : adapted > 0
-              ? "locally adapted"
-              : source.stale === null
-                ? "upstream unchecked"
-                : "up to date";
+        : missing > 0
+          ? `${missing} missing file${missing === 1 ? "" : "s"}`
+          : unrecorded > 0
+            ? `${unrecorded} unrecorded change${unrecorded === 1 ? "" : "s"}`
+            : source.stale
+              ? "update available"
+              : adapted > 0
+                ? "locally adapted"
+                : source.stale === null
+                  ? "upstream unchecked"
+                  : "up to date";
     out(`${source.name.padEnd(nameWidth)}  ${label.padEnd(sourceWidth)}  ${status}`);
   }
   out();

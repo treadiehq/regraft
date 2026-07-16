@@ -75,6 +75,21 @@ describe("regraft remove", () => {
     expect(loadManifest(project)!.grafts).toEqual([]);
   });
 
+  it("rejects empty-normalized selectors without changing metadata or files", () => {
+    const up = initUpstream({ "lib/a.ts": "a\n" });
+    const project = makeProject();
+    addCommand(`${up.url}#main:lib`, "vendor", { cwd: project, name: "only-graft" });
+    const manifestBefore = readFileSync(join(project, "regraft.json"), "utf8");
+
+    for (const query of ["", ".", "./", "/", "///"]) {
+      for (const hard of [false, true]) {
+        expect(() => removeCommand(query, { cwd: project, hard })).toThrow(/not a valid Graft selector/);
+        expect(readFileSync(join(project, "regraft.json"), "utf8")).toBe(manifestBefore);
+        expect(readFileSync(join(project, "vendor/a.ts"), "utf8")).toBe("a\n");
+      }
+    }
+  });
+
   it("errors when a dest query is ambiguous, listing the matches", () => {
     const upA = initUpstream({ "a.ts": "a\n" });
     const upB = initUpstream({ "b.ts": "b\n" });

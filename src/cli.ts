@@ -11,6 +11,7 @@ import { resolveCommand } from "./commands/resolve";
 import { statusCommand } from "./commands/status";
 import { updateCommand } from "./commands/update";
 import { validateCommand } from "./commands/validate";
+import { executeExitCode } from "./core/execute";
 import { resolveVersion } from "./core/version";
 import {
   printAddCli,
@@ -290,7 +291,7 @@ Examples:
 `,
   )
   .action((version?: string) => {
-    process.exitCode = updateCommand(version);
+    process.exitCode = executeExitCode(() => updateCommand(version), printError);
   });
 
 program

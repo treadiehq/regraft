@@ -47,6 +47,7 @@ function resolveCommandUnlocked(opts: ResolveOptions, journal: MutationJournal):
   const root = findRoot(opts.cwd);
   const manifest = requireManifest(root);
   const selected = resolveGrafts(manifest, opts.grafts);
+  const intentById = new Map(manifest.intents.map((intent) => [intent.id, intent] as const));
   const pendingMap = new Map<string, PendingEntry>();
   for (const graft of selected) {
     for (const [rel, file] of Object.entries(graft.files)) {
@@ -106,11 +107,20 @@ function resolveCommandUnlocked(opts: ResolveOptions, journal: MutationJournal):
     const pending = file.pending!;
     const diskHash = diskHashes.get(target) ?? null;
     const retainedAdaptation = diskHash !== pending.targetHash;
+    const matchesRecordedSnapshot = file.intentIds.some((intentId) =>
+      intentById.get(intentId)?.targets.some(
+        (intentTarget) =>
+          intentTarget.kind === "graft-file" &&
+          intentTarget.graftId === entry.graft.id &&
+          intentTarget.rel === entry.rel &&
+          intentTarget.hash === diskHash,
+      ),
+    );
     const alreadyExplained =
       retainedAdaptation &&
-      !file.needsIntent &&
       file.intentIds.length > 0 &&
-      diskHash === file.localHash;
+      diskHash === file.localHash &&
+      (!file.needsIntent || matchesRecordedSnapshot);
 
     if (diskHash === null && pending.targetHash === null) {
       delete entry.graft.files[entry.rel];

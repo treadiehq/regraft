@@ -85,6 +85,60 @@ describe("regraft resolve", () => {
     expect(result.needsNote).toEqual([]);
   });
 
+  it("reuses existing Intent after unrecorded WIP is reverted during resolution", () => {
+    const upstream = initUpstream({ "lib/file.txt": BASE });
+    const project = makeProject();
+    addCommand(`${upstream.url}#main:lib`, "vendor", { cwd: project });
+    const recorded = BASE.replace("two", "LOCAL two");
+    writeFiles(project, { "vendor/file.txt": recorded });
+    const originalIntent = noteCommand("Keep the line-two customization", { cwd: project });
+
+    writeFiles(project, { "vendor/file.txt": BASE.replace("two", "WIP two") });
+    commitUpstream(upstream, { "lib/file.txt": BASE.replace("two", "UPSTREAM two") });
+    expect(pullCommand({ cwd: project }).sources[0]!.conflicts).toEqual(["vendor/file.txt"]);
+    expect(loadManifest(project)!.grafts[0]!.files["file.txt"]!.needsIntent).toBe(true);
+
+    writeFiles(project, { "vendor/file.txt": recorded });
+    const result = resolveCommand({ cwd: project });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.needsNote).toEqual([]);
+    const manifest = loadManifest(project)!;
+    const file = manifest.grafts[0]!.files["file.txt"]!;
+    expect(file.pending).toBeNull();
+    expect(file.needsIntent).toBe(false);
+    expect(file.intentIds).toEqual([originalIntent.intent.id]);
+    expect(manifest.intents).toHaveLength(1);
+  });
+
+  it("still requires Intent when accepted local content has never been explained", () => {
+    const upstream = initUpstream({ "lib/file.txt": BASE });
+    const project = makeProject();
+    addCommand(`${upstream.url}#main:lib`, "vendor", { cwd: project });
+    const explained = BASE.replace("one", "LOCAL one");
+    writeFiles(project, { "vendor/file.txt": explained });
+    noteCommand("Keep the line-one customization", { cwd: project });
+
+    const wip = explained.replace("two", "WIP two");
+    writeFiles(project, { "vendor/file.txt": wip });
+    const upstreamV2 = BASE.replace("five", "UPSTREAM five");
+    commitUpstream(upstream, { "lib/file.txt": upstreamV2 });
+    expect(pullCommand({ cwd: project }).sources[0]!.merged).toEqual(["vendor/file.txt"]);
+    const unexplained = readFileSync(join(project, "vendor/file.txt"), "utf8");
+    expect(loadManifest(project)!.grafts[0]!.files["file.txt"]!.needsIntent).toBe(true);
+
+    commitUpstream(upstream, { "lib/file.txt": upstreamV2.replace("two", "UPSTREAM two") });
+    expect(pullCommand({ cwd: project }).sources[0]!.conflicts).toEqual(["vendor/file.txt"]);
+    writeFiles(project, { "vendor/file.txt": unexplained });
+
+    const result = resolveCommand({ cwd: project });
+    expect(result.exitCode).toBe(1);
+    expect(result.needsNote).toEqual(["vendor/file.txt"]);
+    const file = loadManifest(project)!.grafts[0]!.files["file.txt"]!;
+    expect(file.pending).toBeNull();
+    expect(file.needsIntent).toBe(true);
+  });
+
   it("is idempotent: nothing unresolved is an explicit no-op", () => {
     const up = initUpstream({ "lib/a.txt": "a\n" });
     const project = makeProject();

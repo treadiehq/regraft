@@ -52,6 +52,11 @@ function removeCommandUnlocked(query: string, opts: RemoveOptions, journal: Muta
     `  ${s.url}${s.path ? `#${s.path}` : ""} → ${s.dest}`;
 
   const destQuery = normalizeUserPath(query);
+  if (destQuery === "") {
+    throw new Error(
+      `"${query}" is not a valid Graft selector. Use an exact Graft name or ID, or a specific Source URL/destination substring.`,
+    );
+  }
   const exact = manifest.grafts.find((graft) => graft.id === query || graft.name === query);
   const matches = exact
     ? [exact]
