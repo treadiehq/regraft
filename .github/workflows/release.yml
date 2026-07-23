@@ -39,6 +39,7 @@ jobs:
           pnpm build
           node dist/cli.js validate examples/session-graft/regraft.yaml
           bash examples/session-graft/run.sh
+          bash examples/session-graft/automation/run.sh
           pnpm pack --dry-run
 
   build:

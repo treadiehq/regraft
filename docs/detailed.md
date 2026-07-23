@@ -602,7 +602,8 @@ Pushing a version tag runs the release quality gate:
 3. run TypeScript lint, tests, and the Node build
 4. validate the example publication manifest
 5. run the complete local session-Graft scenario
-6. inspect the package with `pnpm pack --dry-run`
+6. run the customer-controlled maintenance fixture
+7. inspect the package with `pnpm pack --dry-run`
 
 Only after that gate passes does the workflow build the platform binaries,
 smoke-test binaries matching their runner architecture, format-check cross
@@ -636,6 +637,7 @@ pnpm test:run
 pnpm build
 node dist/cli.js validate examples/session-graft/regraft.yaml
 bash examples/session-graft/run.sh
+bash examples/session-graft/automation/run.sh
 pnpm pack --dry-run
 ```
 

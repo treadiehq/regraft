@@ -92,3 +92,15 @@ For network-free checks:
 ```bash
 regraft status --offline
 ```
+
+## Prepare Update pull requests in CI
+
+Run Regraft from a customer-controlled CI environment when provider-published
+integration code should receive scheduled Update pull requests. The workflow
+must create an isolated branch before `pull`, parse command JSON rather than
+treating every exit code `1` as an error, consume pending Briefs in the same
+job, and run customer tests before pushing.
+
+See [Customer-controlled maintenance](automation.md) for the reference
+orchestrator, optional agent adapter, GitHub Actions workflow, and security
+boundary.

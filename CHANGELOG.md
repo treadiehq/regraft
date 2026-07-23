@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.7 - 2026-07-22
+
+### Added
+
+- Added a customer-controlled maintenance reference that turns provider Graft
+  Updates into tested, idempotent pull requests from an isolated consumer CI
+  branch.
+- Added an optional Cursor SDK resolution adapter, unattended-agent safety
+  protocol, automation documentation, and a network-free end-to-end fixture.
+
 ## 0.1.6 - 2026-07-16
 
 ### Fixed

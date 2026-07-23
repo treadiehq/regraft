@@ -1,0 +1,110 @@
+name: Maintain Grafted integrations
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: regraft-maintenance
+  cancel-in-progress: false
+
+env:
+  REGRAFT_BRANCH: regraft/maintenance
+  REGRAFT_TEST_COMMAND: pnpm test:run # Replace with the consumer repository's verification command.
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install project dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Regraft
+        run: npm install --global regraft@0.1.7
+
+      - name: Prepare isolated maintenance branch
+        env:
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name "regraft-maintenance[bot]"
+          git config user.email "regraft-maintenance[bot]@users.noreply.github.com"
+          git fetch origin "$REGRAFT_BRANCH:refs/remotes/origin/$REGRAFT_BRANCH" || true
+          git switch -C "$REGRAFT_BRANCH" "origin/$BASE_BRANCH"
+
+      - name: Prepare customer-controlled Cursor agent
+        env:
+          CURSOR_SDK_VERSION: 1.0.24
+        run: |
+          AGENT_DIR="$RUNNER_TEMP/regraft-agent"
+          mkdir -p "$AGENT_DIR"
+          cp .github/regraft/cursor-resolve.mjs "$AGENT_DIR/cursor-resolve.mjs"
+          npm install --prefix "$AGENT_DIR" --no-audit --no-fund "@cursor/sdk@$CURSOR_SDK_VERSION"
+          echo "REGRAFT_AGENT_COMMAND=node $AGENT_DIR/cursor-resolve.mjs" >> "$GITHUB_ENV"
+
+      - name: Reconcile, resolve, and test
+        id: maintain
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          REGRAFT_RESULT_FILE: ${{ runner.temp }}/regraft-result.json
+          REGRAFT_SKILL_PATH: .github/regraft/SKILL.md
+        run: |
+          node .github/regraft/maintain.mjs
+          STATUS="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).status' "$REGRAFT_RESULT_FILE")"
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and open or update pull request
+        if: steps.maintain.outputs.status == 'updated'
+        env:
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add --all
+          if git diff --cached --quiet; then
+            echo "Regraft reported an Update but no repository changes remain."
+            exit 1
+          fi
+
+          git commit -m "chore: apply Regraft updates"
+          git push --force-with-lease origin "HEAD:refs/heads/$REGRAFT_BRANCH"
+
+          cat > "$RUNNER_TEMP/regraft-pr.md" <<EOF
+          ## Regraft maintenance
+
+          This customer-controlled workflow applied upstream Graft Updates, resolved
+          pending judgment when necessary, and passed:
+
+          \`$REGRAFT_TEST_COMMAND\`
+
+          Review the code changes together with \`regraft.json\` and \`PATCH.md\`.
+          EOF
+
+          NUMBER="$(gh pr list --head "$REGRAFT_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$NUMBER" ]]; then
+            gh pr create \
+              --head "$REGRAFT_BRANCH" \
+              --base "$BASE_BRANCH" \
+              --title "chore: apply Regraft updates" \
+              --body-file "$RUNNER_TEMP/regraft-pr.md"
+          else
+            gh pr edit "$NUMBER" \
+              --title "chore: apply Regraft updates" \
+              --body-file "$RUNNER_TEMP/regraft-pr.md"
+          fi

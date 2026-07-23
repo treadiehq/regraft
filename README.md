@@ -38,11 +38,16 @@ resolve it without guessing.
 
 Commit `regraft.json` and `PATCH.md` with your code.
 
+For provider-published integration code, a customer-controlled CI job can use
+the same workflow to prepare a tested Update pull request without giving the
+provider access to the customer repository.
+
 ## Learn more
 
 - [Getting started](docs/getting-started.md)
 - [How Regraft works](docs/concepts.md)
 - [Guides](docs/guides.md)
+- [Automating Update pull requests](docs/automation.md)
 - [Command reference](docs/reference.md)
 - [Detailed implementation reference](docs/detailed.md)
 - [Publishing graftable code](docs/publishing.md)
