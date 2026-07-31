@@ -54,6 +54,34 @@ Finish pending judgment after files have been deliberately reconciled.
 - `--note <description>`
 - `--json`
 
+### `regraft ui`
+
+Open the local update review in your browser: every pending Update as a
+three-column comparison (upstream, your version, proposed result) with the
+recorded Intent beside each conflict. Decisions write straight to the working
+tree and finish through the same path as `regraft resolve`.
+
+- `--port <port>`: listen on a fixed port (default: a random free port)
+- `--no-open`: print the URL without opening a browser
+
+The server binds to `127.0.0.1` only and requires the per-session token
+embedded in the printed URL. Nothing leaves the machine; state is read from
+`regraft.json`, the Git cache, and the working tree on every request.
+
+Resolutions made outside the page are reviewable in it. When a coding agent
+or an editor resolves conflict regions directly on disk, the page classifies
+each decision against the three sides — took upstream, kept yours, reverted,
+or a custom combination — and any decision can be reopened in place, which
+restores that region's diff3 markers. Classification requires the exact
+pre-pull local version, which regraft recovers from the project's Git
+history; without it the page falls back to the plain marker view.
+
+"Open in editor" opens the working file at the first open region. It runs
+`REGRAFT_EDITOR` when set (e.g. `REGRAFT_EDITOR="subl"`), otherwise it tries
+common editor CLIs (`cursor`, `code`, `zed`, `subl`) and finally the platform
+opener. The page refreshes from disk when it regains focus, so the
+edit-and-return loop needs no manual refresh.
+
 ### `regraft inspect [grafts...]`
 
 Return Graft provenance, Intent, local status, upstream status, pending Updates,

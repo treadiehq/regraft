@@ -9,6 +9,7 @@ import { pullCommand } from "./commands/pull";
 import { removeCommand } from "./commands/remove";
 import { resolveCommand } from "./commands/resolve";
 import { statusCommand } from "./commands/status";
+import { uiCommand } from "./commands/ui";
 import { updateCommand } from "./commands/update";
 import { validateCommand } from "./commands/validate";
 import { executeExitCode } from "./core/execute";
@@ -273,6 +274,43 @@ Examples:
   )
   .action((file: string | undefined, opts: { json?: boolean }) => {
     execute(Boolean(opts.json), printValidate, () => validateCommand(file, { cwd: process.cwd() }));
+  });
+
+program
+  .command("ui")
+  .description("Review and resolve pending Updates in your browser (local only)")
+  .option("--port <port>", "listen on a fixed port (default: a random free port)")
+  .option("--no-open", "print the URL without opening a browser")
+  .addHelpText(
+    "after",
+    `
+Serves a local page bound to 127.0.0.1 with a per-session access token.
+Nothing leaves your machine. The page shows each pending Update as a
+three-column review — upstream, your version, and the proposed result —
+with your recorded Intent beside every conflict.
+
+Examples:
+  $ regraft ui
+  $ regraft ui --port 4653 --no-open
+`,
+  )
+  .action(async (opts: { port?: string; open?: boolean }) => {
+    try {
+      const port = opts.port === undefined ? undefined : Number.parseInt(opts.port, 10);
+      if (port !== undefined && (Number.isNaN(port) || port < 0 || port > 65535)) {
+        throw new Error(`Invalid --port "${opts.port}".`);
+      }
+      const handle = await uiCommand({ cwd: process.cwd(), port, open: opts.open });
+      process.stdout.write(`regraft ui ready:\n\n  ${handle.url}\n\nPress Ctrl+C to stop.\n`);
+      const shutdown = (): void => {
+        void handle.close().finally(() => process.exit(0));
+      };
+      process.on("SIGINT", shutdown);
+      process.on("SIGTERM", shutdown);
+    } catch (err) {
+      printError(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
   });
 
 program

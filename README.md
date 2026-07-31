@@ -30,11 +30,15 @@ regraft note "Use Redis-backed sessions" --files src/auth/session-store.ts
 # Check for upstream changes and bring them in
 regraft status
 regraft pull auth
+
+# When an update needs a decision, review it in your browser
+regraft ui
 ```
 
 Regraft handles straightforward updates automatically. If an update needs a
 decision, it gives you the source, your changes, and your notes so you can
-resolve it without guessing.
+resolve it without guessing — in the terminal, or side by side in the local
+review UI (`regraft ui`).
 
 Commit `regraft.json` and `PATCH.md` with your code.
 

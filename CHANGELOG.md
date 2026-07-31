@@ -1,6 +1,30 @@
 # Changelog
 
-## Unreleased
+## 0.1.9 - 2026-07-31
+
+### Added
+
+- Added `regraft ui`: a local, browser-based update review. Pending Updates
+  appear as a three-column comparison — upstream, your version, and the
+  proposed result — with recorded Intent, upstream commits, and provenance
+  beside every conflict. Regions can be resolved individually (upstream,
+  yours, or a hand-written combination), warnings such as upstream deletions
+  get explicit keep/delete choices, and accepting a result records the
+  resolution note through the same path as `regraft resolve`. The page is
+  served from an embedded single-file bundle on `127.0.0.1` with a
+  per-session token; nothing leaves the machine and the CLI gains no new
+  runtime dependencies.
+- `regraft pull` now mentions `regraft ui` when conflicts require judgment.
+- The review page now doubles as a judgment surface for resolutions made
+  outside it: when an agent or editor resolves regions directly on disk, each
+  decision is classified against the three sides (took upstream, kept yours,
+  reverted, custom combination) and can be reopened in place, restoring that
+  region's diff3 markers. The "Ask agent" context now instructs agents to
+  leave `regraft resolve` to the reviewer.
+- Added "Open in editor" to the review page: opens the working file at the
+  first open region via `REGRAFT_EDITOR`, common editor CLIs (`cursor`,
+  `code`, `zed`, `subl`), or the platform opener. The page refreshes from
+  disk on window focus, so edits made in the editor appear on return.
 
 ## 0.1.8 - 2026-07-31
 

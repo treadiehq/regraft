@@ -259,6 +259,7 @@ export function printPull(r: PullResult): void {
     out(bold(`  ${r.brief}`));
     out();
     out('Next: read the brief, fix each conflict, then run `regraft resolve --note "<how>"`.');
+    out(dim("Or review everything side by side in your browser: `regraft ui`."));
   } else if (r.dryRun) {
     out(dim("A conflict brief would be generated (run without --dry-run)."));
   }
