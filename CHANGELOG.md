@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.8 - 2026-07-31
+
+### Fixed
+
+- Aligned per-file action columns in `regraft pull --dry-run` output, where
+  the longer `would fast-forward` label previously broke the layout.
+
 ## 0.1.7 - 2026-07-22
 
 ### Added

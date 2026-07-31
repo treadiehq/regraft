@@ -221,14 +221,15 @@ function printPullSource(s: PullSourceResult, dry: boolean): void {
   }
   out(`${bold(s.name)} ${dim(`[${s.id}]`)} · ${s.url} (${s.remoteRef}): ${short(s.oldSha)} → ${short(s.newSha)}`);
   const verb = dry ? "would " : "";
-  for (const p of s.added) out(`  ${green(`${verb}add`.padEnd(14))} ${p}`);
-  for (const p of s.fastForwarded) out(`  ${green(`${verb}fast-forward`.padEnd(14))} ${p}`);
-  for (const p of s.merged) out(`  ${green(`${verb}merge`.padEnd(14))} ${p}`);
-  for (const p of s.forced) out(`  ${yellow(`${verb}force`.padEnd(14))} ${p} (used upstream; local changes discarded)`);
-  for (const p of s.deleted) out(`  ${yellow(`${verb}delete`.padEnd(14))} ${p}`);
-  for (const p of s.conflicts) out(`  ${red("CONFLICT".padEnd(14))} ${p}`);
-  for (const k of s.skipped) out(`  ${dim("skip".padEnd(14))} ${k.path}: ${k.reason}`);
-  for (const w of s.warnings) out(`  ${yellow("warning".padEnd(14))} ${w.path}: ${w.message}`);
+  const actionWidth = dry ? 18 : 14;
+  for (const p of s.added) out(`  ${green(`${verb}add`.padEnd(actionWidth))} ${p}`);
+  for (const p of s.fastForwarded) out(`  ${green(`${verb}fast-forward`.padEnd(actionWidth))} ${p}`);
+  for (const p of s.merged) out(`  ${green(`${verb}merge`.padEnd(actionWidth))} ${p}`);
+  for (const p of s.forced) out(`  ${yellow(`${verb}force`.padEnd(actionWidth))} ${p} (used upstream; local changes discarded)`);
+  for (const p of s.deleted) out(`  ${yellow(`${verb}delete`.padEnd(actionWidth))} ${p}`);
+  for (const p of s.conflicts) out(`  ${red("CONFLICT".padEnd(actionWidth))} ${p}`);
+  for (const k of s.skipped) out(`  ${dim("skip".padEnd(actionWidth))} ${k.path}: ${k.reason}`);
+  for (const w of s.warnings) out(`  ${yellow("warning".padEnd(actionWidth))} ${w.path}: ${w.message}`);
 }
 
 export function printPull(r: PullResult): void {

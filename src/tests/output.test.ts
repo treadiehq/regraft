@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AddManyResult, AddResult } from "../commands/add";
+import type { PullResult } from "../commands/pull";
 import type { StatusResult } from "../commands/status";
-import { printAdd, printAddCli, printStatus } from "../ui/output";
+import { printAdd, printAddCli, printPull, printStatus } from "../ui/output";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -80,6 +81,16 @@ function renderStatus(value: StatusResult): string {
     return true;
   });
   printStatus(value);
+  return chunks.join("");
+}
+
+function renderPull(value: PullResult): string {
+  const chunks: string[] = [];
+  vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  });
+  printPull(value);
   return chunks.join("");
 }
 
@@ -207,5 +218,48 @@ describe("printStatus", () => {
     );
     expect(output).toContain("1 missing file");
     expect(output).not.toContain("1 unrecorded change");
+  });
+});
+
+describe("printPull", () => {
+  it("aligns dry-run fast-forward paths with other file actions", () => {
+    const addedPath = "vendor/other.ts";
+    const fastForwardedPath = "vendor/file.ts";
+    const output = renderPull({
+      command: "pull",
+      exitCode: 0,
+      dryRun: true,
+      conflicts: false,
+      brief: null,
+      unrecordedModifications: [],
+      sources: [
+        {
+          id: "g_0123456789abcdef",
+          name: "lib",
+          url: "https://github.com/acme/lib.git",
+          remoteRef: "main",
+          path: "src",
+          dest: "vendor",
+          oldSha: "a".repeat(40),
+          newSha: "b".repeat(40),
+          upToDate: false,
+          added: [addedPath],
+          fastForwarded: [fastForwardedPath],
+          merged: [],
+          forced: [],
+          deleted: [],
+          conflicts: [],
+          skipped: [],
+          warnings: [],
+        },
+      ],
+    });
+    const lines = output.split("\n");
+    const addedLine = lines.find((line) => line.includes(addedPath));
+    const fastForwardedLine = lines.find((line) => line.includes(fastForwardedPath));
+
+    expect(addedLine).toBeDefined();
+    expect(fastForwardedLine).toBeDefined();
+    expect(addedLine!.indexOf(addedPath)).toBe(fastForwardedLine!.indexOf(fastForwardedPath));
   });
 });
