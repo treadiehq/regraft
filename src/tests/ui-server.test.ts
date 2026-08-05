@@ -80,9 +80,10 @@ describe("buildUiState", () => {
 describe("ui server", () => {
   let handle: UiServerHandle;
   let project: string;
+  let up: Upstream;
 
   beforeEach(async () => {
-    ({ project } = conflictedFixture());
+    ({ project, up } = conflictedFixture());
     handle = await startUiServer({ root: project });
   });
 
@@ -132,6 +133,21 @@ describe("ui server", () => {
     expect(loadManifest(project)!.grafts[0]!.files["file.txt"]!.pending).toBeNull();
   });
 
+  it("rejects invalid region choices without changing the file", async () => {
+    const path = join(project, "vendor/file.txt");
+    const before = readFileSync(path, "utf8");
+    const response = await call("/api/region", {
+      method: "POST",
+      body: JSON.stringify({ path: "vendor/file.txt", index: 0, choice: "invalid" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toContain(
+      "region choice must be one of",
+    );
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
   it("resets a conflicted file to its captured merge state", async () => {
     await call("/api/state");
     await call("/api/region", {
@@ -144,6 +160,37 @@ describe("ui server", () => {
     });
     expect(reset.status).toBe(200);
     expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toContain("<<<<<<<");
+  });
+
+  it("refreshes the reset snapshot when the same file conflicts after a later pull", async () => {
+    await call("/api/state");
+    const firstConflict = readFileSync(join(project, "vendor/file.txt"), "utf8");
+    expect(firstConflict).toContain("UPSTREAM line4");
+
+    for (const path of ["vendor/file.txt", "vendor/extra.txt"]) {
+      const resolved = await call("/api/file-action", {
+        method: "POST",
+        body: JSON.stringify({ path, action: "keep-local" }),
+      });
+      expect(resolved.status).toBe(200);
+    }
+
+    commitUpstream(up, { "lib/file.txt": BASE.replace("line4", "UPSTREAM V2 line4") });
+    const pull = await call("/api/pull", { method: "POST", body: JSON.stringify({}) });
+    expect(pull.status).toBe(200);
+    expect(((await pull.json()) as { conflicts: boolean }).conflicts).toBe(true);
+
+    await call("/api/state");
+    const secondConflict = readFileSync(join(project, "vendor/file.txt"), "utf8");
+    expect(secondConflict).toContain("UPSTREAM V2 line4");
+    expect(secondConflict).not.toBe(firstConflict);
+
+    const reset = await call("/api/file-action", {
+      method: "POST",
+      body: JSON.stringify({ path: "vendor/file.txt", action: "reset" }),
+    });
+    expect(reset.status).toBe(200);
+    expect(readFileSync(join(project, "vendor/file.txt"), "utf8")).toBe(secondConflict);
   });
 
   it("handles an upstream-deleted file with keep-local", async () => {

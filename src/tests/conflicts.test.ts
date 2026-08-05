@@ -4,6 +4,7 @@ import {
   parseConflictFile,
   reconstructLocal,
   renderConflictFile,
+  type ConflictChoice,
 } from "../core/conflicts";
 import { mergeThreeWay } from "../core/merge";
 
@@ -26,6 +27,19 @@ const MARKED = [
   "theirs 2b",
   ">>>>>>> upstream",
   "tail",
+  "",
+].join("\n");
+
+const EMBEDDED_LOCAL_MARKER = [
+  "line1",
+  "<<<<<<< local",
+  "<<<<<<< EMBEDDED MARKER IN LOCAL",
+  "||||||| base",
+  "some content",
+  "=======",
+  "MODIFIED UPSTREAM",
+  ">>>>>>> upstream",
+  "line3",
   "",
 ].join("\n");
 
@@ -69,6 +83,54 @@ describe("parseConflictFile", () => {
     expect(conflict).toMatchObject({ local: "OURS\n", base: "three\n", upstream: "THEIRS\n" });
     expect(renderConflictFile(model)).toBe(merged.content.toString("utf8"));
   });
+
+  it("keeps embedded marker-like lines in their conflict sections", () => {
+    const text = [
+      "<<<<<<< local",
+      "<<<<<<< embedded local start",
+      ">>>>>>> embedded local end",
+      "||||||| base",
+      "<<<<<<< embedded base start",
+      "||||||| embedded base marker",
+      ">>>>>>> embedded base end",
+      "=======",
+      "<<<<<<< embedded upstream start",
+      "||||||| embedded upstream base",
+      "=======",
+      "upstream content",
+      ">>>>>>> upstream",
+      "",
+    ].join("\n");
+    const model = parseConflictFile(text);
+    const conflict = model.segments.find((segment) => segment.type === "conflict");
+
+    expect(model.conflictCount).toBe(1);
+    expect(conflict).toMatchObject({
+      local: "<<<<<<< embedded local start\n>>>>>>> embedded local end\n",
+      base: "<<<<<<< embedded base start\n||||||| embedded base marker\n>>>>>>> embedded base end\n",
+      upstream: "<<<<<<< embedded upstream start\n||||||| embedded upstream base\n=======\nupstream content\n",
+      markers: { start: "<<<<<<< local\n", base: "||||||| base\n", end: ">>>>>>> upstream\n" },
+    });
+    expect(renderConflictFile(model)).toBe(text);
+  });
+
+  it("still preserves a malformed conflict with no end marker as plain text", () => {
+    const text = [
+      "before",
+      "<<<<<<< local",
+      "mine",
+      "||||||| base",
+      "old",
+      "=======",
+      "theirs",
+      "after",
+      "",
+    ].join("\n");
+    const model = parseConflictFile(text);
+
+    expect(model.conflictCount).toBe(0);
+    expect(renderConflictFile(model)).toBe(text);
+  });
 });
 
 describe("reconstructLocal", () => {
@@ -78,6 +140,12 @@ describe("reconstructLocal", () => {
 });
 
 describe("applyConflictChoice", () => {
+  it("preserves embedded local markers when choosing the local side", () => {
+    expect(applyConflictChoice(EMBEDDED_LOCAL_MARKER, 0, "local")).toBe(
+      "line1\n<<<<<<< EMBEDDED MARKER IN LOCAL\nline3\n",
+    );
+  });
+
   it("replaces one region and leaves the other untouched", () => {
     const next = applyConflictChoice(MARKED, 0, "upstream");
     expect(next).toContain("line1\ntheirs\nmiddle");
@@ -105,5 +173,11 @@ describe("applyConflictChoice", () => {
 
   it("rejects unknown conflict indexes", () => {
     expect(() => applyConflictChoice(MARKED, 5, "local")).toThrow(/was not found/);
+  });
+
+  it("rejects invalid runtime choices instead of deleting conflict content", () => {
+    expect(() => applyConflictChoice(MARKED, 0, "invalid" as ConflictChoice)).toThrow(
+      /Invalid conflict choice/,
+    );
   });
 });

@@ -33,7 +33,12 @@ export interface ConflictFileModel {
   conflictCount: number;
 }
 
-export type ConflictChoice = "local" | "base" | "upstream" | "custom";
+export const CONFLICT_CHOICES = ["local", "base", "upstream", "custom"] as const;
+export type ConflictChoice = (typeof CONFLICT_CHOICES)[number];
+
+export function isConflictChoice(value: unknown): value is ConflictChoice {
+  return typeof value === "string" && (CONFLICT_CHOICES as readonly string[]).includes(value);
+}
 
 const START_RE = /^<{7}(?: |\r?\n?$)/;
 const BASE_RE = /^\|{7}(?: |\r?\n?$)/;
@@ -81,7 +86,6 @@ export function parseConflictFile(text: string): ConflictFileModel {
     let cursor = i + 1;
     const local: string[] = [];
     while (cursor < lines.length && !BASE_RE.test(lines[cursor]!) && !DIVIDER_RE.test(lines[cursor]!)) {
-      if (START_RE.test(lines[cursor]!) || END_RE.test(lines[cursor]!)) break;
       local.push(lines[cursor]!);
       cursor += 1;
     }
@@ -90,7 +94,6 @@ export function parseConflictFile(text: string): ConflictFileModel {
     if (baseMarker !== null) {
       cursor += 1;
       while (cursor < lines.length && !DIVIDER_RE.test(lines[cursor]!)) {
-        if (START_RE.test(lines[cursor]!) || END_RE.test(lines[cursor]!) || BASE_RE.test(lines[cursor]!)) break;
         base.push(lines[cursor]!);
         cursor += 1;
       }
@@ -104,7 +107,6 @@ export function parseConflictFile(text: string): ConflictFileModel {
     cursor += 1;
     const upstream: string[] = [];
     while (cursor < lines.length && !END_RE.test(lines[cursor]!)) {
-      if (START_RE.test(lines[cursor]!) || BASE_RE.test(lines[cursor]!) || DIVIDER_RE.test(lines[cursor]!)) break;
       upstream.push(lines[cursor]!);
       cursor += 1;
     }
@@ -170,6 +172,11 @@ export function applyConflictChoice(
   choice: ConflictChoice,
   customText?: string,
 ): string {
+  if (!isConflictChoice(choice)) {
+    throw new Error(
+      `Invalid conflict choice "${String(choice)}". Expected one of: ${CONFLICT_CHOICES.join(", ")}.`,
+    );
+  }
   const model = parseConflictFile(text);
   const target = model.segments.find(
     (segment): segment is ConflictSegment => segment.type === "conflict" && segment.index === conflictIndex,

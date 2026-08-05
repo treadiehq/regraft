@@ -6,7 +6,7 @@ import { noteCommand } from "../commands/note";
 import { pullCommand, type PullResult } from "../commands/pull";
 import { resolveCommand, type ResolveResult } from "../commands/resolve";
 import { statusCommand, type StatusResult } from "../commands/status";
-import { applyConflictChoice, reconstructLocal, type ConflictChoice } from "../core/conflicts";
+import { applyConflictChoice, isConflictChoice, reconstructLocal } from "../core/conflicts";
 import { ensureCacheRepo, ensureCommit, readFileAt } from "../core/git";
 import { readFileIfExists, sha256 } from "../core/hash";
 import { requireManifest, type Graft, type GraftFile } from "../core/manifest";
@@ -135,14 +135,18 @@ function localTextFor(root: string, entry: PendingEntry, snapshot: string | unde
 export function startUiServer(options: UiServerOptions): Promise<UiServerHandle> {
   const root = options.root;
   const token = randomBytes(16).toString("hex");
-  /** Original marker files captured at first sight, for per-file reset. */
-  const snapshots = new Map<string, string>();
+  /** Original marker files captured at first sight for each pending conflict generation. */
+  const snapshots = new Map<string, { toSha: string; content: string }>();
 
   const captureSnapshots = (state: UiState): void => {
     for (const graft of state.grafts) {
       for (const file of graft.files) {
-        if (file.pending?.working != null && file.pending.segments !== null && !snapshots.has(file.path)) {
-          snapshots.set(file.path, file.pending.working);
+        if (
+          file.pending?.working != null &&
+          file.pending.segments !== null &&
+          snapshots.get(file.path)?.toSha !== file.pending.toSha
+        ) {
+          snapshots.set(file.path, { toSha: file.pending.toSha, content: file.pending.working });
         }
       }
     }
@@ -197,12 +201,16 @@ export function startUiServer(options: UiServerOptions): Promise<UiServerHandle>
         const body = (await readBody(req)) as {
           path?: string;
           index?: number;
-          choice?: ConflictChoice;
+          choice?: unknown;
           text?: string;
         };
-        if (typeof body.path !== "string" || typeof body.index !== "number" || !body.choice) {
+        if (typeof body.path !== "string" || typeof body.index !== "number" || body.choice === undefined) {
           throw new Error("region requires path, index, and choice.");
         }
+        if (!isConflictChoice(body.choice)) {
+          throw new Error("region choice must be one of: local, base, upstream, custom.");
+        }
+        const choice = body.choice;
         withWorkspaceLock(root, () => {
           const entry = findPendingEntry(root, body.path!);
           const kind = entry.file.pending!.kind;
@@ -212,7 +220,7 @@ export function startUiServer(options: UiServerOptions): Promise<UiServerHandle>
           const abs = managedFilePath(root, body.path!);
           const working = readFileIfExists(abs);
           if (working === null) throw new Error(`"${body.path}" is missing on disk.`);
-          const next = applyConflictChoice(working.toString("utf8"), body.index!, body.choice!, body.text);
+          const next = applyConflictChoice(working.toString("utf8"), body.index!, choice, body.text);
           writeFileEnsuringDir(root, body.path!, next);
         });
         json(res, 200, { ok: true });
@@ -271,7 +279,10 @@ export function startUiServer(options: UiServerOptions): Promise<UiServerHandle>
             case "keep-local": {
               const kind = entry.file.pending!.kind;
               if (kind === "content-conflict" || kind === "legacy-conflict") {
-                writeFileEnsuringDir(root, body.path!, localTextFor(root, entry, snapshots.get(body.path!)));
+                const snapshot = snapshots.get(body.path!);
+                const snapshotContent =
+                  snapshot?.toSha === entry.file.pending!.toSha ? snapshot.content : undefined;
+                writeFileEnsuringDir(root, body.path!, localTextFor(root, entry, snapshotContent));
               }
               return true;
             }
@@ -283,8 +294,10 @@ export function startUiServer(options: UiServerOptions): Promise<UiServerHandle>
               return true;
             case "reset": {
               const snapshot = snapshots.get(body.path!);
-              if (snapshot === undefined) throw new Error("No snapshot to reset to in this session.");
-              writeFileEnsuringDir(root, body.path!, snapshot);
+              if (snapshot?.toSha !== entry.file.pending!.toSha) {
+                throw new Error("No snapshot to reset to for the current conflict.");
+              }
+              writeFileEnsuringDir(root, body.path!, snapshot.content);
               return false;
             }
           }

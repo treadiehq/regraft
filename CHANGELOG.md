@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.10 - 2026-08-05
+
+### Fixed
+
+- Preserved marker-like lines embedded inside conflict content so choosing a
+  side in the review UI cannot silently drop valid text.
+- Scoped reset snapshots to the current conflict generation, preventing a
+  later conflict from restoring stale markers from an earlier pull.
+- Rejected invalid conflict-resolution choices at both the HTTP and core
+  boundaries instead of replacing the conflict region with empty content.
+
 ## 0.1.9 - 2026-07-31
 
 ### Added
