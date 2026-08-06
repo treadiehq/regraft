@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.11 - 2026-08-06
+
+### Fixed
+
+- Generated kind-specific "Ask agent" instructions instead of claiming every
+  pending update contains editable diff3 markers.
+- Preserved the original Vite error when UI bundle generation fails, while
+  still requiring successful builds to emit the embedded `index.html`.
+- Classified exact local, base, and upstream choices correctly when a
+  terminal conflict introduces one synthetic trailing line ending.
+
 ## 0.1.10 - 2026-08-05
 
 ### Fixed

@@ -62,6 +62,46 @@ describe("analyzeResolution", () => {
     expect(analysis.regions[1]!.text).toBe("G-combined\n");
   });
 
+  it.each([
+    ["local", "a\nb\nlocal-changed"],
+    ["base", "a\nb\nc"],
+    ["upstream", "a\nb\nupstream-changed"],
+  ])("classifies an exact %s resolution at EOF without a trailing newline", (status, working) => {
+    const analysis = analyzeResolution({
+      base: "a\nb\nc",
+      local: "a\nb\nlocal-changed",
+      upstream: "a\nb\nupstream-changed",
+      working,
+    });
+
+    expect(analysis).not.toBeNull();
+    expect(analysis!.regions[0]!.status).toBe(status);
+  });
+
+  it("does not ignore trailing spaces while normalizing an EOF line ending", () => {
+    const analysis = analyzeResolution({
+      base: "a\nbase",
+      local: "a\nlocal",
+      upstream: "a\nupstream  ",
+      working: "a\nupstream",
+    });
+
+    expect(analysis).not.toBeNull();
+    expect(analysis!.regions[0]!.status).toBe("custom");
+  });
+
+  it("requires exact newlines for non-terminal conflict regions", () => {
+    const analysis = analyzeResolution({
+      base: "a\nbase\ntail\n",
+      local: "a\nlocal\ntail\n",
+      upstream: "a\nupstream\ntail\n",
+      working: "a\nupstreamtail\n",
+    });
+
+    expect(analysis).not.toBeNull();
+    expect(analysis!.regions[0]!.status).toBe("custom");
+  });
+
   it("returns null when stable text was edited and alignment fails", () => {
     const working = mergedMarkers().replace("f\n", "f edited\n");
     expect(analyzeResolution({ base: BASE, local: LOCAL, upstream: UPSTREAM, working })).toBeNull();

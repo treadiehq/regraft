@@ -1,9 +1,10 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig, type Plugin } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
+import { emitAppHtmlModule } from "./build-plugin.ts";
 
 const webRoot = fileURLToPath(new URL(".", import.meta.url));
 const appHtmlModule = fileURLToPath(new URL("../src/ui/app-html.ts", import.meta.url));
@@ -29,28 +30,9 @@ function inlineFavicon(): Plugin {
   };
 }
 
-/**
- * After vite+singlefile emit web/dist/index.html (all JS/CSS inlined),
- * wrap it into src/ui/app-html.ts so tsup and `bun build --compile`
- * embed the page directly into the CLI with zero runtime assets.
- */
-function emitAppHtmlModule(): Plugin {
-  return {
-    name: "regraft:emit-app-html-module",
-    apply: "build",
-    closeBundle() {
-      const html = readFileSync(`${webRoot}dist/index.html`, "utf8");
-      const banner =
-        "// GENERATED FILE — do not edit by hand.\n" +
-        "// Rebuilt by `pnpm build:ui` (web/ → single self-contained page).\n";
-      writeFileSync(appHtmlModule, `${banner}export const APP_HTML = ${JSON.stringify(html)};\n`);
-    },
-  };
-}
-
 export default defineConfig({
   root: webRoot,
-  plugins: [vue(), tailwindcss(), inlineFavicon(), viteSingleFile(), emitAppHtmlModule()],
+  plugins: [vue(), tailwindcss(), inlineFavicon(), viteSingleFile(), emitAppHtmlModule(appHtmlModule)],
   build: {
     outDir: "dist",
     emptyOutDir: true,

@@ -32,11 +32,39 @@ export interface ResolutionAnalysis {
   unresolved: number;
 }
 
-function classify(chunk: string, segment: ConflictSegment): RegionStatus {
+interface OriginalSides {
+  base: string;
+  local: string;
+  upstream: string;
+}
+
+function withoutOneTrailingLineEnding(text: string): string | null {
+  if (text.endsWith("\r\n")) return text.slice(0, -2);
+  if (text.endsWith("\n")) return text.slice(0, -1);
+  return null;
+}
+
+function matchesSide(
+  chunk: string,
+  conflictSide: string,
+  originalFile: string,
+  atEndOfFile: boolean,
+): boolean {
+  if (chunk === conflictSide) return true;
+  if (!atEndOfFile || originalFile.endsWith("\n")) return false;
+  return chunk === withoutOneTrailingLineEnding(conflictSide);
+}
+
+function classify(
+  chunk: string,
+  segment: ConflictSegment,
+  originals: OriginalSides,
+  atEndOfFile: boolean,
+): RegionStatus {
   if (hasConflictMarkers(chunk)) return "unresolved";
-  if (chunk === segment.upstream) return "upstream";
-  if (chunk === segment.local) return "local";
-  if (chunk === segment.base) return "base";
+  if (matchesSide(chunk, segment.upstream, originals.upstream, atEndOfFile)) return "upstream";
+  if (matchesSide(chunk, segment.local, originals.local, atEndOfFile)) return "local";
+  if (matchesSide(chunk, segment.base, originals.base, atEndOfFile)) return "base";
   return "custom";
 }
 
@@ -65,13 +93,13 @@ export function analyzeResolution(input: {
   let cursor = 0;
   let pending: ConflictSegment | null = null;
 
-  const closeRegion = (chunkEnd: number): boolean => {
+  const closeRegion = (chunkEnd: number, atEndOfFile = false): boolean => {
     if (!pending) return true;
     const start = cursor;
     const text = working.slice(start, chunkEnd);
     regions.push({
       index: pending.index,
-      status: classify(text, pending),
+      status: classify(text, pending, input, atEndOfFile),
       text,
       local: pending.local,
       base: pending.base,
@@ -99,7 +127,7 @@ export function analyzeResolution(input: {
     }
     cursor = found + segment.text.length;
   }
-  if (pending) closeRegion(working.length);
+  if (pending) closeRegion(working.length, true);
   else if (cursor !== working.length) return null; // unexplained trailing text
 
   return { regions, unresolved: regions.filter((region) => region.status === "unresolved").length };
