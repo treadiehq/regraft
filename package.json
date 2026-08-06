@@ -1,6 +1,6 @@
 {
   "name": "regraft",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Keep copied code up to date.",
   "type": "module",
   "repository": {
